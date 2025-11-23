@@ -1,6 +1,7 @@
 import { FormEvent, useEffect, useState } from 'react';
 import api from '../api/client';
 import { MailAccountDto } from '../api/types';
+import { useToast } from '../state/ToastContext';
 
 const emptyCustom = {
   displayName: '',
@@ -21,6 +22,7 @@ const AccountsPage = () => {
   const [accounts, setAccounts] = useState<MailAccountDto[]>([]);
   const [custom, setCustom] = useState({ ...emptyCustom });
   const [status, setStatus] = useState<string | null>(null);
+  const toast = useToast();
 
   const load = () => api.get<MailAccountDto[]>('/api/mail-accounts').then((res) => setAccounts(res.data));
   useEffect(() => {
@@ -33,11 +35,13 @@ const AccountsPage = () => {
     await api.post('/api/mail-accounts/custom', custom);
     setCustom({ ...emptyCustom });
     setStatus('Hesap eklendi ve doğrulama başlatıldı');
+    toast.push('Hesap eklendi ve doğrulama başlatıldı', 'success');
     load();
   };
 
   const startGmail = async () => {
     const res = await api.post<{ authorizationUrl: string; state: string }>('/api/mail-accounts/gmail/start-auth');
+    toast.push('Gmail bağlantısı başlatıldı, yönlendiriliyorsunuz...', 'info');
     window.location.href = res.data.authorizationUrl;
   };
 

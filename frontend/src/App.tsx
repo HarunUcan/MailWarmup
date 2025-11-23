@@ -5,6 +5,7 @@ import DashboardPage from './pages/Dashboard';
 import AccountsPage from './pages/Accounts';
 import ProfilesPage from './pages/Profiles';
 import LogsPage from './pages/Logs';
+import HomePage from './pages/Home';
 import { ProtectedRoute } from './components/ProtectedRoute';
 import { useAuth } from './state/AuthContext';
 
@@ -18,29 +19,49 @@ const NavBar = () => {
         <span>AutoWarm</span>
         <span className="pill">SaaS</span>
       </div>
-      {token && (
-        <nav className="nav-links">
-          <NavLink className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`} to="/dashboard">
-            Dashboard
-          </NavLink>
-          <NavLink className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`} to="/accounts">
-            Hesaplar
-          </NavLink>
-          <NavLink className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`} to="/profiles">
-            Profiller
-          </NavLink>
-          <NavLink className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`} to="/logs">
-            Loglar
-          </NavLink>
-        </nav>
-      )}
+      <nav className="nav-links">
+        {token ? (
+          <>
+            <NavLink className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`} to="/dashboard">
+              Dashboard
+            </NavLink>
+            <NavLink className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`} to="/accounts">
+              Hesaplar
+            </NavLink>
+            <NavLink className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`} to="/profiles">
+              Profiller
+            </NavLink>
+            <NavLink className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`} to="/logs">
+              Loglar
+            </NavLink>
+          </>
+        ) : (
+          <>
+            <a className="nav-link" href="#features">
+              Özellikler
+            </a>
+            <a className="nav-link" href="#pricing">
+              Paketler
+            </a>
+          </>
+        )}
+      </nav>
       {token ? (
         <div className="topbar-actions">
           <button className="btn btn-ghost" onClick={logout}>
             Çıkış yap
           </button>
         </div>
-      ) : null}
+      ) : (
+        <div className="topbar-actions">
+          <NavLink className="btn btn-ghost" to="/login">
+            Giriş yap
+          </NavLink>
+          <NavLink className="btn btn-primary" to="/register">
+            Kayıt ol
+          </NavLink>
+        </div>
+      )}
     </div>
   );
 };
@@ -84,7 +105,8 @@ function App() {
             </ProtectedRoute>
           }
         />
-        <Route path="/" element={<Navigate to="/dashboard" replace />} />
+        <Route path="/" element={<HomePage />} />
+        <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </div>
   );

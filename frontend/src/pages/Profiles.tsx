@@ -1,6 +1,7 @@
 import { FormEvent, useEffect, useState } from 'react';
 import api from '../api/client';
 import { MailAccountDto, WarmupProfileDto } from '../api/types';
+import { useToast } from '../state/ToastContext';
 
 const getTodayLocal = () => {
   const d = new Date();
@@ -26,6 +27,7 @@ const ProfilesPage = () => {
   const [selected, setSelected] = useState<string>('');
   const [profiles, setProfiles] = useState<WarmupProfileDto[]>([]);
   const [form, setForm] = useState({ ...defaultProfile });
+  const toast = useToast();
 
   useEffect(() => {
     api.get<MailAccountDto[]>('/api/mail-accounts').then((res) => {
@@ -49,6 +51,7 @@ const ProfilesPage = () => {
     await api.post('/api/warmup-profiles', { ...form, mailAccountId: selected });
     const res = await api.get<WarmupProfileDto[]>(`/api/warmup-profiles/${selected}`);
     setProfiles(res.data);
+    toast.push('Profil oluşturuldu ve bugünün işleri üretildi.', 'success');
   };
 
   return (

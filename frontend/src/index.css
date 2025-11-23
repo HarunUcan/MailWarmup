@@ -413,6 +413,122 @@ a {
   min-width: 110px;
 }
 
+.home {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 28px 20px 64px;
+  color: #e9f0ff;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.hero {
+  background: linear-gradient(135deg, rgba(99, 102, 241, 0.2), rgba(59, 130, 246, 0.16));
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 18px;
+  padding: 32px;
+  box-shadow: 0 24px 60px rgba(3, 7, 18, 0.45);
+}
+
+.hero h1 {
+  margin: 12px 0 8px;
+  font-size: 34px;
+  color: #f8fbff;
+}
+
+.hero p {
+  margin: 0;
+  color: #cdd8ef;
+}
+
+.feature {
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 14px;
+  padding: 16px;
+  color: #e5edff;
+  box-shadow: 0 16px 36px rgba(0, 0, 0, 0.18);
+}
+
+.feature h3 {
+  margin: 8px 0 6px;
+}
+
+.pricing {
+  background: rgba(255, 255, 255, 0.94);
+  border: 1px solid rgba(14, 22, 40, 0.06);
+  border-radius: 18px;
+  padding: 18px;
+  color: #0e1628;
+  box-shadow: 0 14px 60px rgba(5, 8, 20, 0.12);
+}
+
+.pricing ul {
+  list-style: none;
+  padding: 0;
+  margin: 12px 0 16px;
+  color: #4a5670;
+}
+
+.pricing li {
+  margin-bottom: 6px;
+}
+
+.pricing .price {
+  font-size: 28px;
+  font-weight: 800;
+  margin: 6px 0 8px;
+}
+
+.pricing.highlighted {
+  border: 2px solid #60a5fa;
+  box-shadow: 0 24px 60px rgba(96, 165, 250, 0.25);
+}
+
+.home .card {
+  margin-top: 0;
+}
+
+.toast-stack {
+  position: fixed;
+  bottom: 20px;
+  right: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  z-index: 9999;
+}
+
+.toast {
+  padding: 10px 14px;
+  border-radius: 10px;
+  color: #0e1628;
+  min-width: 220px;
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.15);
+  border: 1px solid rgba(14, 22, 40, 0.08);
+  background: #ffffff;
+  font-weight: 700;
+}
+
+.toast-success {
+  border-color: rgba(34, 197, 94, 0.25);
+  background: #ecfdf3;
+  color: #065f46;
+}
+
+.toast-error {
+  border-color: rgba(239, 68, 68, 0.25);
+  background: #fef2f2;
+  color: #991b1b;
+}
+
+.toast-info {
+  border-color: rgba(59, 130, 246, 0.25);
+  background: #eff6ff;
+  color: #1d4ed8;
+}
+
 @media (max-width: 768px) {
   .topbar {
     flex-wrap: wrap;
