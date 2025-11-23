@@ -42,10 +42,22 @@ public class WarmupEngine : IWarmupEngine
         var todayLocal = DateTime.Now.Date;
         foreach (var profile in profiles)
         {
+            // Avoid regenerating jobs for the same day (e.g., on application restarts).
+            var utcDayStart = TimeZoneInfo.ConvertTimeToUtc(DateTime.SpecifyKind(todayLocal, DateTimeKind.Local));
+            var utcDayEnd = TimeZoneInfo.ConvertTimeToUtc(DateTime.SpecifyKind(todayLocal.AddDays(1).AddTicks(-1), DateTimeKind.Local));
+            var alreadyScheduled = await _jobs.HasJobsInRangeAsync(profile.MailAccountId, utcDayStart, utcDayEnd, cancellationToken);
+            if (alreadyScheduled)
+            {
+                continue;
+            }
+
             var jobs = _strategy.GenerateDailyJobs(profile, todayLocal);
-            await _jobs.AddRangeAsync(jobs, cancellationToken);
-            profile.CurrentDay += 1;
-            await _profiles.UpdateAsync(profile, cancellationToken);
+            if (jobs.Count > 0)
+            {
+                await _jobs.AddRangeAsync(jobs, cancellationToken);
+                profile.CurrentDay += 1;
+                await _profiles.UpdateAsync(profile, cancellationToken);
+            }
         }
 
         await _unitOfWork.SaveChangesAsync(cancellationToken);

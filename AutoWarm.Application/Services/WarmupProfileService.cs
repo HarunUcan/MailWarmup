@@ -14,15 +14,18 @@ public class WarmupProfileService : IWarmupProfileService
     private readonly IMailAccountRepository _mailAccounts;
     private readonly IWarmupProfileRepository _profiles;
     private readonly IUnitOfWork _unitOfWork;
+    private readonly IWarmupEngine _warmupEngine;
 
     public WarmupProfileService(
         IMailAccountRepository mailAccounts,
         IWarmupProfileRepository profiles,
-        IUnitOfWork unitOfWork)
+        IUnitOfWork unitOfWork,
+        IWarmupEngine warmupEngine)
     {
         _mailAccounts = mailAccounts;
         _profiles = profiles;
         _unitOfWork = unitOfWork;
+        _warmupEngine = warmupEngine;
     }
 
     public async Task<IReadOnlyCollection<WarmupProfileDto>> GetByMailAccountAsync(Guid userId, Guid mailAccountId, CancellationToken cancellationToken = default)
@@ -66,6 +69,9 @@ public class WarmupProfileService : IWarmupProfileService
 
         await _profiles.AddAsync(profile, cancellationToken);
         await _unitOfWork.SaveChangesAsync(cancellationToken);
+
+        // Ensure today's jobs are queued immediately without waiting for the scheduler.
+        await _warmupEngine.GenerateDailyJobsAsync(cancellationToken);
         return MapToDto(profile);
     }
 
