@@ -44,6 +44,16 @@ export type ReputationScoreDto = {
   trend: number[];
 };
 
+export type DnsCheckDto = {
+  mailAccountId: string;
+  emailAddress: string;
+  spf: string;
+  dkim: string;
+  dmarc: string;
+  mx: string;
+  reverseDns: string;
+};
+
 export type WarmupLogDto = {
   id: string;
   mailAccountId: string;

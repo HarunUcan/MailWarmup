@@ -10,13 +10,14 @@ using AutoWarm.Domain.Enums;
 
 namespace AutoWarm.Application.Services;
 
-public class MailAccountService : IMailAccountService
+    public class MailAccountService : IMailAccountService
 {
     private readonly IMailAccountRepository _mailAccounts;
     private readonly IUserRepository _users;
     private readonly IGmailOAuthService _gmailOAuth;
     private readonly IMailProviderFactory _mailProviderFactory;
     private readonly IWarmupEmailLogRepository _logs;
+    private readonly IDnsHealthChecker _dnsHealthChecker;
     private readonly IUnitOfWork _unitOfWork;
 
     public MailAccountService(
@@ -25,6 +26,7 @@ public class MailAccountService : IMailAccountService
         IGmailOAuthService gmailOAuth,
         IMailProviderFactory mailProviderFactory,
         IWarmupEmailLogRepository logs,
+        IDnsHealthChecker dnsHealthChecker,
         IUnitOfWork unitOfWork)
     {
         _mailAccounts = mailAccounts;
@@ -32,6 +34,7 @@ public class MailAccountService : IMailAccountService
         _gmailOAuth = gmailOAuth;
         _mailProviderFactory = mailProviderFactory;
         _logs = logs;
+        _dnsHealthChecker = dnsHealthChecker;
         _unitOfWork = unitOfWork;
     }
 
@@ -171,5 +174,18 @@ public class MailAccountService : IMailAccountService
 
         await _unitOfWork.SaveChangesAsync(cancellationToken);
         return result;
+    }
+
+    public async Task<IReadOnlyCollection<DnsCheckDto>> GetDnsChecksAsync(Guid userId, CancellationToken cancellationToken = default)
+    {
+        var accounts = await _mailAccounts.GetForUserAsync(userId, cancellationToken);
+        var checks = new List<DnsCheckDto>();
+        foreach (var account in accounts)
+        {
+            var check = await _dnsHealthChecker.CheckAsync(account.EmailAddress, cancellationToken);
+            checks.Add(check with { MailAccountId = account.Id, EmailAddress = account.EmailAddress });
+        }
+
+        return checks.ToArray();
     }
 }

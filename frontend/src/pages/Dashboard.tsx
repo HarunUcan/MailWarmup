@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState, MouseEvent } from 'react';
 import api from '../api/client';
-import { DashboardSummaryDto, ReputationScoreDto } from '../api/types';
+import { DashboardSummaryDto, ReputationScoreDto, DnsCheckDto } from '../api/types';
 
 type Point = { x: number; y: number; value: number; label: string };
 
@@ -156,18 +156,30 @@ const scoreColor = (score: number) => {
   return '#ef4444';
 };
 
+const statusColor = (status: string) => {
+  const normalized = status.toLowerCase();
+  if (normalized.includes('pass')) return '#22c55e';
+  if (normalized.includes('warning')) return '#f59e0b';
+  if (normalized.includes('unknown')) return '#6b7280';
+  if (normalized.includes('fail') || normalized.includes('error')) return '#ef4444';
+  return '#0ea5e9';
+};
+
 const DashboardPage = () => {
   const [summary, setSummary] = useState<DashboardSummaryDto | null>(null);
   const [reputations, setReputations] = useState<ReputationScoreDto[]>([]);
+  const [dnsChecks, setDnsChecks] = useState<DnsCheckDto[]>([]);
 
   useEffect(() => {
     const load = async () => {
-      const [summaryRes, repRes] = await Promise.all([
+      const [summaryRes, repRes, dnsRes] = await Promise.all([
         api.get<DashboardSummaryDto>('/api/dashboard/summary'),
         api.get<ReputationScoreDto[]>('/api/dashboard/reputation'),
+        api.get<DnsCheckDto[]>('/api/mail-accounts/dns-checks'),
       ]);
       setSummary(summaryRes.data);
       setReputations(repRes.data);
+      setDnsChecks(dnsRes.data);
     };
     load();
   }, []);
@@ -231,6 +243,39 @@ const DashboardPage = () => {
                   </tr>
                 );
               })}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {dnsChecks.length > 0 && (
+        <div className="card" style={{ marginTop: 16 }}>
+          <div className="card-header">
+            <div className="card-title">DNS / Authentication Check</div>
+            <div className="page-subtitle" style={{ margin: 0 }}>SPF, DKIM, DMARC, MX ve Reverse DNS durumu</div>
+          </div>
+          <table className="table">
+            <thead>
+              <tr>
+                <th>Hesap</th>
+                <th>SPF</th>
+                <th>DKIM</th>
+                <th>DMARC</th>
+                <th>MX</th>
+                <th>Reverse DNS</th>
+              </tr>
+            </thead>
+            <tbody>
+              {dnsChecks.map((c) => (
+                <tr key={c.mailAccountId}>
+                  <td>{c.emailAddress}</td>
+                  <td><span className="pill" style={{ background: `${statusColor(c.spf)}22`, color: statusColor(c.spf) }}>{c.spf}</span></td>
+                  <td><span className="pill" style={{ background: `${statusColor(c.dkim)}22`, color: statusColor(c.dkim) }}>{c.dkim}</span></td>
+                  <td><span className="pill" style={{ background: `${statusColor(c.dmarc)}22`, color: statusColor(c.dmarc) }}>{c.dmarc}</span></td>
+                  <td><span className="pill" style={{ background: `${statusColor(c.mx)}22`, color: statusColor(c.mx) }}>{c.mx}</span></td>
+                  <td><span className="pill" style={{ background: `${statusColor(c.reverseDns)}22`, color: statusColor(c.reverseDns) }}>{c.reverseDns}</span></td>
+                </tr>
+              ))}
             </tbody>
           </table>
         </div>

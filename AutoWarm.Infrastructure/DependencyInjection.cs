@@ -41,6 +41,7 @@ public static class DependencyInjection
         services.AddScoped<ITokenService, TokenService>();
         services.AddScoped<IGmailOAuthService, GmailOAuthService>();
         services.AddScoped<IMailProviderFactory, MailProviderFactory>();
+        services.AddScoped<IDnsHealthChecker, DnsHealthChecker>();
         services.AddScoped<GmailMailProvider>();
         services.AddScoped<SmtpImapMailProvider>();
 

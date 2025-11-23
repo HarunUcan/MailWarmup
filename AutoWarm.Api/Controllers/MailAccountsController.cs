@@ -92,6 +92,14 @@ public class MailAccountsController : ControllerBase
         return Ok(logs);
     }
 
+    [HttpGet("dns-checks")]
+    public async Task<IActionResult> GetDnsChecks(CancellationToken cancellationToken)
+    {
+        var userId = GetUserId();
+        var checks = await _mailAccountService.GetDnsChecksAsync(userId, cancellationToken);
+        return Ok(checks);
+    }
+
     private Guid GetUserId()
     {
         var id = User.FindFirstValue(ClaimTypes.NameIdentifier);
