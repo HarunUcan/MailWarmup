@@ -74,4 +74,18 @@ public class WarmupJobRepository : IWarmupJobRepository
             .ToListAsync(cancellationToken);
         return jobs;
     }
+
+    public async Task<IReadOnlyCollection<WarmupJob>> GetByAccountsInRangeAsync(IEnumerable<Guid> mailAccountIds, DateTime utcStart, DateTime utcEnd, CancellationToken cancellationToken = default)
+    {
+        var idList = mailAccountIds.ToList();
+        if (idList.Count == 0)
+        {
+            return Array.Empty<WarmupJob>();
+        }
+
+        var jobs = await _context.WarmupJobs
+            .Where(j => idList.Contains(j.MailAccountId) && j.ScheduledAt >= utcStart && j.ScheduledAt <= utcEnd)
+            .ToListAsync(cancellationToken);
+        return jobs;
+    }
 }

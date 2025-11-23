@@ -36,6 +36,14 @@ export type DashboardSummaryDto = {
   warmupJobsPending: number;
 };
 
+export type ReputationScoreDto = {
+  mailAccountId: string;
+  emailAddress: string;
+  score: number;
+  label: string;
+  trend: number[];
+};
+
 export type WarmupLogDto = {
   id: string;
   mailAccountId: string;

@@ -28,6 +28,14 @@ public class DashboardController : ControllerBase
         return Ok(summary);
     }
 
+    [HttpGet("reputation")]
+    public async Task<IActionResult> Reputation(CancellationToken cancellationToken)
+    {
+        var userId = GetUserId();
+        var scores = await _service.GetReputationScoresAsync(userId, cancellationToken);
+        return Ok(scores);
+    }
+
     private Guid GetUserId()
     {
         var id = User.FindFirstValue(ClaimTypes.NameIdentifier);

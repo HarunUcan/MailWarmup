@@ -11,4 +11,5 @@ public interface IWarmupJobService
 {
     Task<DashboardSummaryDto> GetDashboardSummaryAsync(Guid userId, CancellationToken cancellationToken = default);
     Task<IReadOnlyCollection<WarmupLogDto>> GetLogsAsync(Guid userId, WarmupLogFilter filter, CancellationToken cancellationToken = default);
+    Task<IReadOnlyCollection<ReputationScoreDto>> GetReputationScoresAsync(Guid userId, CancellationToken cancellationToken = default);
 }

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState, MouseEvent } from 'react';
 import api from '../api/client';
-import { DashboardSummaryDto } from '../api/types';
+import { DashboardSummaryDto, ReputationScoreDto } from '../api/types';
 
 type Point = { x: number; y: number; value: number; label: string };
 
@@ -137,11 +137,39 @@ const AreaChartCard = ({
   );
 };
 
+const MiniSpark = ({ data, color }: { data: number[]; color: string }) => {
+  const width = 160;
+  const height = 60;
+  const points = createPoints(data, width, height);
+  const path = points.map((p, idx) => `${idx === 0 ? 'M' : 'L'}${p.x},${p.y}`).join(' ');
+  return (
+    <svg className="chart" viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="none" style={{ height: 60 }}>
+      <path d={`${path}`} fill="none" stroke={color} strokeWidth={2.4} strokeLinecap="round" />
+    </svg>
+  );
+};
+
+const scoreColor = (score: number) => {
+  if (score >= 85) return '#22c55e';
+  if (score >= 70) return '#f59e0b';
+  if (score >= 50) return '#f97316';
+  return '#ef4444';
+};
+
 const DashboardPage = () => {
   const [summary, setSummary] = useState<DashboardSummaryDto | null>(null);
+  const [reputations, setReputations] = useState<ReputationScoreDto[]>([]);
 
   useEffect(() => {
-    api.get<DashboardSummaryDto>('/api/dashboard/summary').then((res) => setSummary(res.data));
+    const load = async () => {
+      const [summaryRes, repRes] = await Promise.all([
+        api.get<DashboardSummaryDto>('/api/dashboard/summary'),
+        api.get<ReputationScoreDto[]>('/api/dashboard/reputation'),
+      ]);
+      setSummary(summaryRes.data);
+      setReputations(repRes.data);
+    };
+    load();
   }, []);
 
   const sentTrend = useMemo(() => buildTrend(summary?.dailySentEmails ?? 20), [summary?.dailySentEmails]);
@@ -175,6 +203,38 @@ const DashboardPage = () => {
           <div className="metric-value">{summary?.warmupJobsPending ?? '-'}</div>
         </div>
       </div>
+
+      {reputations.length > 0 && (
+        <div className="card" style={{ marginTop: 16 }}>
+          <div className="card-header">
+            <div className="card-title">İtibar / Sağlık Skoru</div>
+            <div className="page-subtitle" style={{ margin: 0 }}>Inbox, spam, bounce ve yanıt oranlarına göre hesaplanır</div>
+          </div>
+          <table className="table">
+            <thead>
+              <tr>
+                <th>Hesap</th>
+                <th>Skor</th>
+                <th>Durum</th>
+                <th>Trend (7g)</th>
+              </tr>
+            </thead>
+            <tbody>
+              {reputations.map((rep) => {
+                const color = scoreColor(rep.score);
+                return (
+                  <tr key={rep.mailAccountId}>
+                    <td>{rep.emailAddress}</td>
+                    <td style={{ fontWeight: 700, color }}>{Math.round(rep.score)}/100</td>
+                    <td><span className="pill" style={{ background: `${color}22`, color: color }}>{rep.label}</span></td>
+                    <td><MiniSpark data={rep.trend} color={color} /></td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
 
       <div className="grid two" style={{ marginTop: 16 }}>
         <AreaChartCard title="Haftalık gönderim trendi" subtitle="Son 7 gün" color="#4f8bff" data={sentTrend} />
