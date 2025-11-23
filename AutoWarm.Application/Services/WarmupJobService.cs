@@ -28,14 +28,20 @@ public class WarmupJobService : IWarmupJobService
     public async Task<DashboardSummaryDto> GetDashboardSummaryAsync(Guid userId, CancellationToken cancellationToken = default)
     {
         var accounts = await _mailAccounts.GetForUserAsync(userId, cancellationToken);
+        if (accounts.Count == 0)
+        {
+            return new DashboardSummaryDto(0, 0, 0, 0);
+        }
+
         var activeAccounts = accounts.Count(a => a.Status == Domain.Enums.MailAccountStatus.Connected);
-        var pendingJobs = await _jobs.CountPendingAsync(cancellationToken);
+        var accountIds = accounts.Select(a => a.Id).ToArray();
+        var pendingJobs = await _jobs.CountPendingForAccountsAsync(accountIds, cancellationToken);
 
         // This is a placeholder; in a real system these would be aggregated from logs or analytics tables.
         var todayLocal = DateTime.Now.Date;
         var utcStart = TimeZoneInfo.ConvertTimeToUtc(todayLocal);
         var utcEnd = TimeZoneInfo.ConvertTimeToUtc(todayLocal.AddDays(1).AddTicks(-1));
-        var logs = await _logs.QueryAsync(null, utcStart, utcEnd, cancellationToken);
+        var logs = await _logs.QueryForAccountsAsync(accountIds, utcStart, utcEnd, cancellationToken);
         var sent = logs.Count(l => l.Direction == Domain.Enums.EmailDirection.Sent);
         var replies = logs.Count(l => l.Direction == Domain.Enums.EmailDirection.Replied);
 
@@ -70,7 +76,15 @@ public class WarmupJobService : IWarmupJobService
             toUtc = TimeZoneInfo.ConvertTimeToUtc(localEnd);
         }
 
-        var logs = await _logs.QueryAsync(mailAccountId, fromUtc, toUtc, cancellationToken);
+        var accounts = await _mailAccounts.GetForUserAsync(userId, cancellationToken);
+        var allowedAccountIds = accounts.Select(a => a.Id).ToArray();
+        if (mailAccountId.HasValue && !allowedAccountIds.Contains(mailAccountId.Value))
+        {
+            return Array.Empty<WarmupLogDto>();
+        }
+
+        var targetIds = mailAccountId.HasValue ? new[] { mailAccountId.Value } : allowedAccountIds;
+        var logs = await _logs.QueryForAccountsAsync(targetIds, fromUtc, toUtc, cancellationToken);
         return logs
             .Select(l => new WarmupLogDto(
                 l.Id,

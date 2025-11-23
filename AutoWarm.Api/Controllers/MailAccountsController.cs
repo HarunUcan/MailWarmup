@@ -5,8 +5,10 @@ using System.Threading.Tasks;
 using AutoWarm.Application.DTOs.MailAccounts;
 using AutoWarm.Application.DTOs.Logs;
 using AutoWarm.Application.Interfaces;
+using AutoWarm.Infrastructure.Settings;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Options;
 
 namespace AutoWarm.Api.Controllers;
 
@@ -16,10 +18,12 @@ namespace AutoWarm.Api.Controllers;
 public class MailAccountsController : ControllerBase
 {
     private readonly IMailAccountService _mailAccountService;
+    private readonly GmailOAuthOptions _gmailOptions;
 
-    public MailAccountsController(IMailAccountService mailAccountService)
+    public MailAccountsController(IMailAccountService mailAccountService, IOptions<GmailOAuthOptions> gmailOptions)
     {
         _mailAccountService = mailAccountService;
+        _gmailOptions = gmailOptions.Value;
     }
 
     [HttpGet]
@@ -55,6 +59,12 @@ public class MailAccountsController : ControllerBase
         }
 
         var account = await _mailAccountService.CompleteGmailAuthAsync(userId, code, state, cancellationToken);
+        if (!string.IsNullOrWhiteSpace(_gmailOptions.FrontendRedirectUri))
+        {
+            var redirectUri = $"{_gmailOptions.FrontendRedirectUri.TrimEnd('/')}/accounts?provider=gmail&status=success";
+            return Redirect(redirectUri);
+        }
+
         return Ok(account);
     }
 

@@ -13,6 +13,7 @@ public interface IWarmupJobRepository
     Task<IReadOnlyCollection<WarmupJob>> GetPendingJobsAsync(DateTime now, CancellationToken cancellationToken = default);
     Task UpdateAsync(WarmupJob job, CancellationToken cancellationToken = default);
     Task<int> CountPendingAsync(CancellationToken cancellationToken = default);
+    Task<int> CountPendingForAccountsAsync(IEnumerable<Guid> mailAccountIds, CancellationToken cancellationToken = default);
     Task<IReadOnlyCollection<WarmupJob>> GetByMailAccountAsync(Guid mailAccountId, CancellationToken cancellationToken = default);
     Task<bool> HasJobsInRangeAsync(Guid mailAccountId, DateTime utcStart, DateTime utcEnd, CancellationToken cancellationToken = default);
 }

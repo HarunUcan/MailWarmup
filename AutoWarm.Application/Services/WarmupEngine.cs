@@ -10,6 +10,7 @@ namespace AutoWarm.Application.Services;
 
 public class WarmupEngine : IWarmupEngine
 {
+    private static readonly Random _random = new();
     private readonly IWarmupProfileRepository _profiles;
     private readonly IWarmupJobRepository _jobs;
     private readonly IMailAccountRepository _accounts;
@@ -65,6 +66,13 @@ public class WarmupEngine : IWarmupEngine
 
     public async Task ExecutePendingJobsAsync(CancellationToken cancellationToken = default)
     {
+        var networkProfiles = await _profiles.GetActiveProfilesAsync(cancellationToken);
+        var networkAccounts = networkProfiles
+            .Select(p => p.MailAccount)
+            .Where(a => a is not null && a.Status == MailAccountStatus.Connected)
+            .Cast<MailAccount>()
+            .ToList();
+
         var pendingJobs = await _jobs.GetPendingJobsAsync(DateTime.UtcNow, cancellationToken);
         foreach (var job in pendingJobs)
         {
@@ -82,13 +90,58 @@ public class WarmupEngine : IWarmupEngine
             try
             {
                 string messageId = job.Id.ToString();
+                string toAddress = account.EmailAddress;
+                string subject = "Warmup ping";
+
+                // Resolve a target account for send or reply.
+                var targetLog = await GetLatestInboundAsync(account, cancellationToken);
+                if (job.Type == WarmupJobType.ReplyEmail && targetLog is not null)
+                {
+                    toAddress = targetLog.FromAddress;
+                    subject = $"Re: {targetLog.Subject}";
+                }
+                else
+                {
+                    var peer = SelectPeer(networkAccounts, account.Id);
+                    if (peer is not null)
+                    {
+                        toAddress = peer.EmailAddress;
+                    }
+                }
+
                 switch (job.Type)
                 {
                     case WarmupJobType.SendEmail:
-                        messageId = await provider.SendEmailAsync(account, account.EmailAddress, "Warmup ping", "Hello from AutoWarm warmup.", cancellationToken);
+                        messageId = await provider.SendEmailAsync(
+                            account,
+                            toAddress,
+                            subject,
+                            $"Hello from AutoWarm warmup. Target: {toAddress}",
+                            cancellationToken);
+
+                        // Schedule a reply from the peer after a short delay to simulate conversation.
+                        var peerForReply = networkAccounts.FirstOrDefault(a => string.Equals(a.EmailAddress, toAddress, StringComparison.OrdinalIgnoreCase));
+                        if (peerForReply is not null && peerForReply.Id != account.Id)
+                        {
+                            var delayMinutes = _random.Next(5, 16); // 5-15 minutes
+                            var replyJob = new WarmupJob
+                            {
+                                Id = Guid.NewGuid(),
+                                MailAccountId = peerForReply.Id,
+                                ScheduledAt = DateTime.UtcNow.AddMinutes(delayMinutes),
+                                Type = WarmupJobType.ReplyEmail,
+                                Status = WarmupJobStatus.Pending
+                            };
+                            await _jobs.AddRangeAsync(new[] { replyJob }, cancellationToken);
+                        }
                         break;
                     case WarmupJobType.ReplyEmail:
-                        messageId = await provider.SendEmailAsync(account, account.EmailAddress, "Warmup reply", "Replying to warmup thread.", cancellationToken);
+                        messageId = await provider.SendEmailAsync(
+                            account,
+                            toAddress,
+                            subject,
+                            $"Replying in warmup mesh to {toAddress}.",
+                            cancellationToken);
                         break;
                     case WarmupJobType.MarkImportant:
                         await provider.MarkAsImportantAsync(account, job.Id.ToString(), cancellationToken);
@@ -99,14 +152,15 @@ public class WarmupEngine : IWarmupEngine
                 }
 
                 job.Status = WarmupJobStatus.Success;
+                var direction = job.Type == WarmupJobType.ReplyEmail ? EmailDirection.Replied : EmailDirection.Sent;
                 await _logs.AddAsync(new WarmupEmailLog
                 {
                     Id = Guid.NewGuid(),
                     MailAccountId = account.Id,
                     MessageId = messageId,
-                    Direction = EmailDirection.Sent,
-                    Subject = "Warmup activity",
-                    ToAddress = account.EmailAddress,
+                    Direction = direction,
+                    Subject = subject,
+                    ToAddress = toAddress,
                     FromAddress = account.EmailAddress,
                     SentAt = DateTime.UtcNow,
                     DeliveredAt = DateTime.UtcNow
@@ -123,5 +177,31 @@ public class WarmupEngine : IWarmupEngine
         }
 
         await _unitOfWork.SaveChangesAsync(cancellationToken);
+    }
+
+    private static MailAccount? SelectPeer(IReadOnlyCollection<MailAccount> network, Guid sourceAccountId)
+    {
+        var peers = network.Where(a => a.Id != sourceAccountId).ToList();
+        if (peers.Count == 0)
+        {
+            return null;
+        }
+
+        lock (_random)
+        {
+            var index = _random.Next(peers.Count);
+            return peers[index];
+        }
+    }
+
+    private async Task<WarmupEmailLog?> GetLatestInboundAsync(MailAccount account, CancellationToken cancellationToken)
+    {
+        var logs = await _logs.QueryForAccountsAsync(new[] { account.Id }, null, null, cancellationToken);
+        return logs
+            .Where(l =>
+                l.ToAddress.Equals(account.EmailAddress, StringComparison.OrdinalIgnoreCase) &&
+                !l.FromAddress.Equals(account.EmailAddress, StringComparison.OrdinalIgnoreCase))
+            .OrderByDescending(l => l.SentAt ?? DateTime.MinValue)
+            .FirstOrDefault();
     }
 }

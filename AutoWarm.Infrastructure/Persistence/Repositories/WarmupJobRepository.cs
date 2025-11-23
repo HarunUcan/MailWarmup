@@ -44,6 +44,19 @@ public class WarmupJobRepository : IWarmupJobRepository
         return _context.WarmupJobs.CountAsync(j => j.Status == WarmupJobStatus.Pending, cancellationToken);
     }
 
+    public Task<int> CountPendingForAccountsAsync(IEnumerable<Guid> mailAccountIds, CancellationToken cancellationToken = default)
+    {
+        var idList = mailAccountIds.ToList();
+        if (idList.Count == 0)
+        {
+            return Task.FromResult(0);
+        }
+
+        return _context.WarmupJobs.CountAsync(
+            j => j.Status == WarmupJobStatus.Pending && idList.Contains(j.MailAccountId),
+            cancellationToken);
+    }
+
     public Task<bool> HasJobsInRangeAsync(Guid mailAccountId, DateTime utcStart, DateTime utcEnd, CancellationToken cancellationToken = default)
     {
         return _context.WarmupJobs.AnyAsync(
