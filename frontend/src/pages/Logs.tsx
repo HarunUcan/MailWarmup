@@ -21,25 +21,55 @@ const LogsPage = () => {
   }, []);
 
   return (
-    <div className="container">
-      <h2>Warmup Logları</h2>
-      <div className="card">
-        <div className="grid columns-2">
-          <select value={filters.mailAccountId} onChange={(e) => setFilters({ ...filters, mailAccountId: e.target.value || undefined })}>
-            <option value="">Tüm hesaplar</option>
-            {accounts.map((a) => (
-              <option key={a.id} value={a.id}>
-                {a.emailAddress}
-              </option>
-            ))}
-          </select>
-          <div style={{ display: 'flex', gap: 8 }}>
-            <input type="date" value={filters.from} onChange={(e) => setFilters({ ...filters, from: e.target.value || undefined })} />
-            <input type="date" value={filters.to} onChange={(e) => setFilters({ ...filters, to: e.target.value || undefined })} />
-            <button onClick={load}>Filtrele</button>
+    <div className="page">
+      <div className="page-header">
+        <div>
+          <div className="page-title">Warmup logları</div>
+          <div className="page-subtitle">Gönderim, yanıt ve inbox aksiyonlarını günlük olarak inceleyin</div>
+        </div>
+      </div>
+
+      <div className="card section">
+        <div className="grid two">
+          <div className="field">
+            <label>Hesap filtresi</label>
+            <select
+              className="select"
+              value={filters.mailAccountId ?? ''}
+              onChange={(e) => setFilters({ ...filters, mailAccountId: e.target.value || undefined })}
+            >
+              <option value="">Tüm hesaplar</option>
+              {accounts.map((a) => (
+                <option key={a.id} value={a.id}>
+                  {a.emailAddress}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="field">
+            <label>Tarih aralığı</label>
+            <div className="row wrap">
+              <input
+                className="input"
+                type="date"
+                value={filters.from ?? ''}
+                onChange={(e) => setFilters({ ...filters, from: e.target.value || undefined })}
+              />
+              <input
+                className="input"
+                type="date"
+                value={filters.to ?? ''}
+                onChange={(e) => setFilters({ ...filters, to: e.target.value || undefined })}
+              />
+              <button className="btn btn-ghost" onClick={load}>
+                Uygula
+              </button>
+            </div>
+            <div className="hint">Aralığı boş bırakırsanız tüm kayıtlar gelir.</div>
           </div>
         </div>
-        <table>
+
+        <table className="table">
           <thead>
             <tr>
               <th>Hesap</th>
@@ -53,10 +83,15 @@ const LogsPage = () => {
               <tr key={log.id}>
                 <td>{accounts.find((a) => a.id === log.mailAccountId)?.emailAddress ?? 'N/A'}</td>
                 <td>{log.subject}</td>
-                <td>{log.direction === 0 ? 'Gönderildi' : log.direction === 1 ? 'Alındı' : 'Yanıtlandı'}</td>
+                <td>{log.direction === 0 ? 'Gönderildi' : log.direction === 1 ? 'Alındı' : log.direction === 2 ? 'Yanıt' : 'İşlem'}</td>
                 <td>{log.sentAt ? new Date(log.sentAt).toLocaleString() : '-'}</td>
               </tr>
             ))}
+            {!logs.length && (
+              <tr>
+                <td colSpan={4}>Kayıt bulunamadı.</td>
+              </tr>
+            )}
           </tbody>
         </table>
       </div>

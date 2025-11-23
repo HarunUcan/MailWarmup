@@ -1,4 +1,4 @@
-import { Navigate, NavLink, Route, Routes, useLocation } from 'react-router-dom';
+import { Navigate, NavLink, Route, Routes } from 'react-router-dom';
 import LoginPage from './pages/Login';
 import RegisterPage from './pages/Register';
 import DashboardPage from './pages/Dashboard';
@@ -10,28 +10,37 @@ import { useAuth } from './state/AuthContext';
 
 const NavBar = () => {
   const { token, logout } = useAuth();
-  const location = useLocation();
 
   return (
     <div className="topbar">
-      <strong>AutoWarm</strong>
+      <div className="brand">
+        <span className="dot" />
+        <span>AutoWarm</span>
+        <span className="pill">SaaS</span>
+      </div>
       {token && (
-        <nav>
-          <NavLink className={location.pathname === '/dashboard' ? 'active' : ''} to="/dashboard">
+        <nav className="nav-links">
+          <NavLink className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`} to="/dashboard">
             Dashboard
           </NavLink>
-          <NavLink className={location.pathname === '/accounts' ? 'active' : ''} to="/accounts">
+          <NavLink className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`} to="/accounts">
             Hesaplar
           </NavLink>
-          <NavLink className={location.pathname === '/profiles' ? 'active' : ''} to="/profiles">
+          <NavLink className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`} to="/profiles">
             Profiller
           </NavLink>
-          <NavLink className={location.pathname === '/logs' ? 'active' : ''} to="/logs">
+          <NavLink className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`} to="/logs">
             Loglar
           </NavLink>
         </nav>
       )}
-      {token ? <button onClick={logout}>Çıkış</button> : null}
+      {token ? (
+        <div className="topbar-actions">
+          <button className="btn btn-ghost" onClick={logout}>
+            Çıkış yap
+          </button>
+        </div>
+      ) : null}
     </div>
   );
 };

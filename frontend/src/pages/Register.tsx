@@ -21,17 +21,30 @@ const RegisterPage = () => {
   };
 
   return (
-    <div className="container">
-      <div className="card" style={{ maxWidth: 420, margin: '40px auto' }}>
+    <div className="auth-layout">
+      <div className="auth-hero">
+        <div className="chip">AutoWarm</div>
+        <h1>Yeni hesap oluştur</h1>
+        <p>Warmup profilleri, loglar ve hesap yönetimi tek bir panelde. 2 dakika içinde kullanmaya başlayın.</p>
+      </div>
+      <div className="auth-panel">
         <h2>Kayıt ol</h2>
-        <form onSubmit={handleSubmit}>
-          <input placeholder="Email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} required />
-          <input placeholder="Şifre" type="password" value={password} onChange={(e) => setPassword(e.target.value)} required />
+        <form className="stack" onSubmit={handleSubmit}>
+          <div className="field">
+            <label>Email</label>
+            <input className="input" type="email" value={email} onChange={(e) => setEmail(e.target.value)} required />
+          </div>
+          <div className="field">
+            <label>Şifre</label>
+            <input className="input" type="password" value={password} onChange={(e) => setPassword(e.target.value)} required />
+          </div>
           {error && <span style={{ color: 'crimson' }}>{error}</span>}
-          <button type="submit">Hesap oluştur</button>
+          <button className="btn btn-primary" type="submit">
+            Hesap oluştur
+          </button>
         </form>
         <p>
-          Zaten hesabın var mı? <Link to="/login">Giriş yap</Link>
+          Zaten hesabınız var mı? <Link to="/login">Giriş yap</Link>
         </p>
       </div>
     </div>
