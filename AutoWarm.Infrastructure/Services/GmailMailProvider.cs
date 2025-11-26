@@ -49,11 +49,14 @@ public class GmailMailProvider : IMailProvider
     {
         var service = await CreateServiceAsync(account, cancellationToken);
 
+        // Add a unique id so we can later detect our own messages in spam.
+        var warmupId = $"AutoWarm-{Guid.NewGuid():N}";
         var message = new MimeMessage();
         message.From.Add(MailboxAddress.Parse(account.EmailAddress));
         message.To.Add(MailboxAddress.Parse(to));
         message.Subject = subject;
         message.Body = new TextPart("plain") { Text = body };
+        message.Headers.Add("X-AutoWarm-Id", warmupId);
 
         var raw = Base64UrlEncode(Encoding.UTF8.GetBytes(message.ToString()));
         var gmailMessage = new Message { Raw = raw };
@@ -64,28 +67,54 @@ public class GmailMailProvider : IMailProvider
     public async Task<IReadOnlyCollection<WarmupEmailLog>> FetchRecentEmailsAsync(MailAccount account, CancellationToken cancellationToken = default)
     {
         var service = await CreateServiceAsync(account, cancellationToken);
+        var logs = new List<WarmupEmailLog>();
+        var processed = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        // Process spam first so warmup mails are rescued quickly, then inbox.
+        await AddLogsForLabelAsync(service, account, logs, processed, "SPAM", cancellationToken);
+        await AddLogsForLabelAsync(service, account, logs, processed, "INBOX", cancellationToken);
+
+        return logs;
+    }
+
+    private async Task AddLogsForLabelAsync(
+        GmailService service,
+        MailAccount account,
+        List<WarmupEmailLog> logs,
+        HashSet<string> processed,
+        string labelId,
+        CancellationToken cancellationToken)
+    {
         var listRequest = service.Users.Messages.List("me");
-        listRequest.LabelIds = "INBOX";
+        listRequest.LabelIds = labelId;
         listRequest.MaxResults = 10;
         listRequest.IncludeSpamTrash = true;
 
         var list = await listRequest.ExecuteAsync(cancellationToken);
         if (list.Messages == null || list.Messages.Count == 0)
         {
-            return Array.Empty<WarmupEmailLog>();
+            return;
         }
 
-        var logs = new List<WarmupEmailLog>();
         foreach (var m in list.Messages)
         {
+            if (!processed.Add(m.Id))
+            {
+                continue;
+            }
+
             var msg = await service.Users.Messages.Get("me", m.Id).ExecuteAsync(cancellationToken);
             var headers = msg.Payload?.Headers ?? new List<MessagePartHeader>();
             var subject = headers.FirstOrDefault(h => h.Name.Equals("Subject", StringComparison.OrdinalIgnoreCase))?.Value ?? "(no subject)";
             var from = headers.FirstOrDefault(h => h.Name.Equals("From", StringComparison.OrdinalIgnoreCase))?.Value ?? string.Empty;
             var to = headers.FirstOrDefault(h => h.Name.Equals("To", StringComparison.OrdinalIgnoreCase))?.Value ?? account.EmailAddress;
+            var autoWarmId = headers.FirstOrDefault(h => h.Name.Equals("X-AutoWarm-Id", StringComparison.OrdinalIgnoreCase))?.Value;
             var internalDate = msg.InternalDate.HasValue
                 ? DateTimeOffset.FromUnixTimeMilliseconds((long)msg.InternalDate.Value).UtcDateTime
                 : (DateTime?)null;
+
+            var isSpam = msg.LabelIds?.Contains("SPAM") == true;
+            var isWarmup = !string.IsNullOrWhiteSpace(autoWarmId);
 
             logs.Add(new WarmupEmailLog
             {
@@ -99,11 +128,30 @@ public class GmailMailProvider : IMailProvider
                 SentAt = internalDate,
                 DeliveredAt = internalDate,
                 MarkedAsImportant = msg.LabelIds?.Contains("IMPORTANT") == true,
-                IsSpam = msg.LabelIds?.Contains("SPAM") == true
+                IsSpam = isSpam
             });
-        }
 
-        return logs;
+            // Only move our own warmup mails out of spam.
+            if (isSpam && isWarmup)
+            {
+                var modify = new ModifyMessageRequest
+                {
+                    AddLabelIds = new[] { "INBOX" },
+                    RemoveLabelIds = new[] { "SPAM" }
+                };
+                var modified = await service.Users.Messages.Modify(modify, "me", msg.Id).ExecuteAsync(cancellationToken);
+
+                // Gmail bazen SPAM etiketini bırakabiliyor; gerekirse ikinci bir temizleme yap.
+                if (modified.LabelIds?.Contains("SPAM") == true)
+                {
+                    var clean = new ModifyMessageRequest
+                    {
+                        RemoveLabelIds = new[] { "SPAM" }
+                    };
+                    await service.Users.Messages.Modify(clean, "me", msg.Id).ExecuteAsync(cancellationToken);
+                }
+            }
+        }
     }
 
     public async Task MarkAsImportantAsync(MailAccount account, string messageId, CancellationToken cancellationToken = default)

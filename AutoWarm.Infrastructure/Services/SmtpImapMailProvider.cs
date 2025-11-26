@@ -49,11 +49,13 @@ public class SmtpImapMailProvider : IMailProvider
             throw new InvalidOperationException("SMTP/IMAP details missing.");
         }
 
+        var warmupId = $"AutoWarm-{Guid.NewGuid():N}";
         var message = new MimeMessage();
         message.From.Add(new MailboxAddress(account.DisplayName, account.EmailAddress));
         message.To.Add(MailboxAddress.Parse(to));
         message.Subject = subject;
         message.Body = new TextPart("plain") { Text = body };
+        message.Headers.Add("X-AutoWarm-Id", warmupId);
 
         using var client = new SmtpClient();
         await client.ConnectAsync(account.SmtpImapDetails.SmtpHost, account.SmtpImapDetails.SmtpPort, account.SmtpImapDetails.SmtpUseSsl, cancellationToken);

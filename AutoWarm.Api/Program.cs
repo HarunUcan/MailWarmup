@@ -48,6 +48,7 @@ builder.Services.AddAuthorization();
 
 builder.Services.AddHostedService<DailyWarmupJobScheduler>();
 builder.Services.AddHostedService<WarmupJobExecutor>();
+builder.Services.AddHostedService<WarmupInboxMonitor>();
 
 var app = builder.Build();
 

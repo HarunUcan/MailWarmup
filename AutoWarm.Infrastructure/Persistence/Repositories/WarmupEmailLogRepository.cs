@@ -69,4 +69,9 @@ public class WarmupEmailLogRepository : IWarmupEmailLogRepository
         var logs = await query.OrderByDescending(l => l.SentAt).ToListAsync(cancellationToken);
         return logs;
     }
+
+    public Task<bool> ExistsAsync(Guid mailAccountId, string messageId, CancellationToken cancellationToken = default)
+    {
+        return _context.WarmupEmailLogs.AnyAsync(l => l.MailAccountId == mailAccountId && l.MessageId == messageId, cancellationToken);
+    }
 }
