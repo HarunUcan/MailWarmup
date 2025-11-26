@@ -46,4 +46,10 @@ public class MailAccountRepository : IMailAccountRepository
         _context.MailAccounts.Update(account);
         return Task.CompletedTask;
     }
+
+    public Task DeleteAsync(MailAccount account, CancellationToken cancellationToken = default)
+    {
+        _context.MailAccounts.Remove(account);
+        return Task.CompletedTask;
+    }
 }

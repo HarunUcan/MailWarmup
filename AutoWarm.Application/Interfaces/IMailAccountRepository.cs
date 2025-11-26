@@ -12,4 +12,5 @@ public interface IMailAccountRepository
     Task<MailAccount?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default);
     Task AddAsync(MailAccount account, CancellationToken cancellationToken = default);
     Task UpdateAsync(MailAccount account, CancellationToken cancellationToken = default);
+    Task DeleteAsync(MailAccount account, CancellationToken cancellationToken = default);
 }

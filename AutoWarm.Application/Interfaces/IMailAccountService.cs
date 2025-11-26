@@ -15,4 +15,6 @@ public interface IMailAccountService
     Task<string> SendTestAsync(Guid userId, Guid mailAccountId, SendTestMailRequest request, CancellationToken cancellationToken = default);
     Task<IReadOnlyCollection<DTOs.Logs.WarmupLogDto>> FetchRecentAsync(Guid userId, Guid mailAccountId, CancellationToken cancellationToken = default);
     Task<IReadOnlyCollection<DnsCheckDto>> GetDnsChecksAsync(Guid userId, CancellationToken cancellationToken = default);
+    Task SetStatusAsync(Guid userId, Guid mailAccountId, bool isEnabled, CancellationToken cancellationToken = default);
+    Task DeleteAsync(Guid userId, Guid mailAccountId, CancellationToken cancellationToken = default);
 }

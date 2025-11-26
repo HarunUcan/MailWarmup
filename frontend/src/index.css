@@ -127,6 +127,46 @@ a {
   border: 1px solid rgba(255, 255, 255, 0.1);
 }
 
+.icon-btn {
+  background: transparent;
+  border: none;
+  color: #0e1628;
+  padding: 4px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  font-size: 15px;
+}
+
+.icon-btn:hover {
+  background: transparent;
+}
+
+.action-row {
+  gap: 6px;
+}
+
+.icon-btn {
+  background: transparent;
+  border: none;
+  color: #0e1628;
+  padding: 6px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  font-size: 15px;
+}
+
+.icon-btn:hover {
+  background: rgba(14, 22, 40, 0.06);
+}
+
 .btn:hover {
   transform: translateY(-1px);
   box-shadow: 0 14px 34px rgba(74, 120, 255, 0.25);

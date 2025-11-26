@@ -100,9 +100,27 @@ public class MailAccountsController : ControllerBase
         return Ok(checks);
     }
 
+    [HttpPatch("{id:guid}/status")]
+    public async Task<IActionResult> SetStatus(Guid id, [FromBody] UpdateStatusRequest request, CancellationToken cancellationToken)
+    {
+        var userId = GetUserId();
+        await _mailAccountService.SetStatusAsync(userId, id, request.IsEnabled, cancellationToken);
+        return NoContent();
+    }
+
+    [HttpDelete("{id:guid}")]
+    public async Task<IActionResult> Delete(Guid id, CancellationToken cancellationToken)
+    {
+        var userId = GetUserId();
+        await _mailAccountService.DeleteAsync(userId, id, cancellationToken);
+        return NoContent();
+    }
+
     private Guid GetUserId()
     {
         var id = User.FindFirstValue(ClaimTypes.NameIdentifier);
         return Guid.Parse(id!);
     }
 }
+
+public record UpdateStatusRequest(bool IsEnabled);

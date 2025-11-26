@@ -188,4 +188,29 @@ namespace AutoWarm.Application.Services;
 
         return checks.ToArray();
     }
+
+    public async Task SetStatusAsync(Guid userId, Guid mailAccountId, bool isEnabled, CancellationToken cancellationToken = default)
+    {
+        var account = await _mailAccounts.GetByIdAsync(mailAccountId, cancellationToken);
+        if (account is null || account.UserId != userId)
+        {
+            throw new InvalidOperationException("Mail account not found.");
+        }
+
+        account.Status = isEnabled ? MailAccountStatus.Connected : MailAccountStatus.Disabled;
+        await _mailAccounts.UpdateAsync(account, cancellationToken);
+        await _unitOfWork.SaveChangesAsync(cancellationToken);
+    }
+
+    public async Task DeleteAsync(Guid userId, Guid mailAccountId, CancellationToken cancellationToken = default)
+    {
+        var account = await _mailAccounts.GetByIdAsync(mailAccountId, cancellationToken);
+        if (account is null || account.UserId != userId)
+        {
+            return;
+        }
+
+        await _mailAccounts.DeleteAsync(account, cancellationToken);
+        await _unitOfWork.SaveChangesAsync(cancellationToken);
+    }
 }
