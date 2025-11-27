@@ -17,6 +17,7 @@ public static class DependencyInjection
         services.AddScoped<IWarmupJobService, WarmupJobService>();
         services.AddScoped<IWarmupStrategy, LinearWarmupStrategy>();
         services.AddScoped<IWarmupEngine, WarmupEngine>();
+        services.AddSingleton<IWarmupInboxRescueQueue, WarmupInboxRescueQueue>();
         return services;
     }
 }

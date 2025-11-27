@@ -17,12 +17,19 @@ public class WarmupInboxMonitor : BackgroundService
 {
     private readonly ILogger<WarmupInboxMonitor> _logger;
     private readonly IServiceScopeFactory _scopeFactory;
-    private static readonly TimeSpan Interval = TimeSpan.FromMinutes(5);
+    private readonly IWarmupInboxRescueQueue _rescueQueue;
+    private static readonly TimeSpan TickInterval = TimeSpan.FromSeconds(10);
+    private static readonly TimeSpan FullScanInterval = TimeSpan.FromMinutes(5);
+    private DateTimeOffset _lastFullScan = DateTimeOffset.MinValue;
 
-    public WarmupInboxMonitor(ILogger<WarmupInboxMonitor> logger, IServiceScopeFactory scopeFactory)
+    public WarmupInboxMonitor(
+        ILogger<WarmupInboxMonitor> logger,
+        IServiceScopeFactory scopeFactory,
+        IWarmupInboxRescueQueue rescueQueue)
     {
         _logger = logger;
         _scopeFactory = scopeFactory;
+        _rescueQueue = rescueQueue;
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -32,18 +39,35 @@ public class WarmupInboxMonitor : BackgroundService
         {
             try
             {
-                await ScanAsync(stoppingToken);
+                await DrainAndScanAsync(stoppingToken);
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "WarmupInboxMonitor failed");
             }
 
-            await Task.Delay(Interval, stoppingToken);
+            await Task.Delay(TickInterval, stoppingToken);
         }
     }
 
-    private async Task ScanAsync(CancellationToken cancellationToken)
+    private async Task DrainAndScanAsync(CancellationToken cancellationToken)
+    {
+        var queued = _rescueQueue.DequeueAll();
+        var shouldFullScan = DateTimeOffset.UtcNow - _lastFullScan >= FullScanInterval;
+
+        if (queued.Count == 0 && !shouldFullScan)
+        {
+            return;
+        }
+
+        await ScanAsync(queued, shouldFullScan, cancellationToken);
+        if (shouldFullScan)
+        {
+            _lastFullScan = DateTimeOffset.UtcNow;
+        }
+    }
+
+    private async Task ScanAsync(IReadOnlyCollection<Guid> queuedAccounts, bool includeFullScan, CancellationToken cancellationToken)
     {
         using var scope = _scopeFactory.CreateScope();
         var profiles = scope.ServiceProvider.GetRequiredService<IWarmupProfileRepository>();
@@ -57,6 +81,12 @@ public class WarmupInboxMonitor : BackgroundService
             .Where(a => a is not null && a.Status == MailAccountStatus.Connected)
             .Select(a => a!)
             .ToList();
+
+        if (!includeFullScan && queuedAccounts.Count > 0)
+        {
+            var targets = queuedAccounts.ToHashSet();
+            accounts = accounts.Where(a => targets.Contains(a.Id)).ToList();
+        }
 
         foreach (var account in accounts)
         {

@@ -18,6 +18,7 @@ public class WarmupEngine : IWarmupEngine
     private readonly IWarmupEmailLogRepository _logs;
     private readonly IWarmupStrategy _strategy;
     private readonly IUnitOfWork _unitOfWork;
+    private readonly IWarmupInboxRescueQueue _rescueQueue;
 
     public WarmupEngine(
         IWarmupProfileRepository profiles,
@@ -26,7 +27,8 @@ public class WarmupEngine : IWarmupEngine
         IMailProviderFactory providerFactory,
         IWarmupEmailLogRepository logs,
         IWarmupStrategy strategy,
-        IUnitOfWork unitOfWork)
+        IUnitOfWork unitOfWork,
+        IWarmupInboxRescueQueue rescueQueue)
     {
         _profiles = profiles;
         _jobs = jobs;
@@ -35,6 +37,7 @@ public class WarmupEngine : IWarmupEngine
         _logs = logs;
         _strategy = strategy;
         _unitOfWork = unitOfWork;
+        _rescueQueue = rescueQueue;
     }
 
     public async Task GenerateDailyJobsAsync(CancellationToken cancellationToken = default)
@@ -133,6 +136,11 @@ public class WarmupEngine : IWarmupEngine
                                 Status = WarmupJobStatus.Pending
                             };
                             await _jobs.AddRangeAsync(new[] { replyJob }, cancellationToken);
+                            _rescueQueue.Enqueue(peerForReply.Id);
+                        }
+                        else
+                        {
+                            _rescueQueue.Enqueue(account.Id);
                         }
                         break;
                     case WarmupJobType.ReplyEmail:
@@ -142,6 +150,12 @@ public class WarmupEngine : IWarmupEngine
                             subject,
                             $"Replying in warmup mesh to {toAddress}.",
                             cancellationToken);
+
+                        var replyTarget = networkAccounts.FirstOrDefault(a => string.Equals(a.EmailAddress, toAddress, StringComparison.OrdinalIgnoreCase));
+                        if (replyTarget is not null)
+                        {
+                            _rescueQueue.Enqueue(replyTarget.Id);
+                        }
                         break;
                     case WarmupJobType.MarkImportant:
                         await provider.MarkAsImportantAsync(account, job.Id.ToString(), cancellationToken);
