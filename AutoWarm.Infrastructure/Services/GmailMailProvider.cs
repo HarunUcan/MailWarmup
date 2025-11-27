@@ -115,8 +115,10 @@ public class GmailMailProvider : IMailProvider
 
             var isSpam = msg.LabelIds?.Contains("SPAM") == true;
             var isWarmup = !string.IsNullOrWhiteSpace(autoWarmId);
+            var isUnread = msg.LabelIds?.Contains("UNREAD") == true;
+            DateTime? openedAt = null;
 
-            logs.Add(new WarmupEmailLog
+            var log = new WarmupEmailLog
             {
                 Id = Guid.NewGuid(),
                 MailAccountId = account.Id,
@@ -128,27 +130,61 @@ public class GmailMailProvider : IMailProvider
                 SentAt = internalDate,
                 DeliveredAt = internalDate,
                 MarkedAsImportant = msg.LabelIds?.Contains("IMPORTANT") == true,
-                IsSpam = isSpam
-            });
+                IsSpam = isSpam,
+                OpenedAt = openedAt
+            };
+            logs.Add(log);
 
-            // Only move our own warmup mails out of spam.
-            if (isSpam && isWarmup)
+            // Only handle our own warmup mails: rescue from spam and mark as read.
+            if (isWarmup && (isSpam || isUnread))
             {
-                var modify = new ModifyMessageRequest
-                {
-                    AddLabelIds = new[] { "INBOX" },
-                    RemoveLabelIds = new[] { "SPAM" }
-                };
-                var modified = await service.Users.Messages.Modify(modify, "me", msg.Id).ExecuteAsync(cancellationToken);
+                var addLabelIds = new List<string>();
+                var removeLabelIds = new List<string>();
 
-                // Gmail bazen SPAM etiketini bırakabiliyor; gerekirse ikinci bir temizleme yap.
-                if (modified.LabelIds?.Contains("SPAM") == true)
+                if (isSpam)
                 {
-                    var clean = new ModifyMessageRequest
+                    addLabelIds.Add("INBOX");
+                    removeLabelIds.Add("SPAM");
+                }
+
+                if (isUnread)
+                {
+                    removeLabelIds.Add("UNREAD");
+                    openedAt = DateTime.UtcNow;
+                }
+
+                var modify = new ModifyMessageRequest();
+                if (addLabelIds.Count > 0)
+                {
+                    modify.AddLabelIds = addLabelIds;
+                }
+
+                if (removeLabelIds.Count > 0)
+                {
+                    modify.RemoveLabelIds = removeLabelIds;
+                }
+
+                if ((modify.AddLabelIds?.Any() == true) || (modify.RemoveLabelIds?.Any() == true))
+                {
+                    var modified = await service.Users.Messages.Modify(modify, "me", msg.Id).ExecuteAsync(cancellationToken);
+
+                    // Gmail sometimes keeps labels; try a clean pass if needed.
+                    if (isSpam && modified.LabelIds?.Contains("SPAM") == true)
                     {
-                        RemoveLabelIds = new[] { "SPAM" }
-                    };
-                    await service.Users.Messages.Modify(clean, "me", msg.Id).ExecuteAsync(cancellationToken);
+                        var cleanSpam = new ModifyMessageRequest { RemoveLabelIds = new[] { "SPAM" } };
+                        await service.Users.Messages.Modify(cleanSpam, "me", msg.Id).ExecuteAsync(cancellationToken);
+                    }
+
+                    if (isUnread && modified.LabelIds?.Contains("UNREAD") == true)
+                    {
+                        var cleanUnread = new ModifyMessageRequest { RemoveLabelIds = new[] { "UNREAD" } };
+                        await service.Users.Messages.Modify(cleanUnread, "me", msg.Id).ExecuteAsync(cancellationToken);
+                    }
+                }
+
+                if (openedAt.HasValue)
+                {
+                    log.OpenedAt = openedAt;
                 }
             }
         }
