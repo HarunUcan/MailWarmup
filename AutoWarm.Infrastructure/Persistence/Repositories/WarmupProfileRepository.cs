@@ -54,7 +54,10 @@ public class WarmupProfileRepository : IWarmupProfileRepository
         var localToday = DateTime.Now.Date;
         var utcDayStart = TimeZoneInfo.ConvertTimeToUtc(localToday);
         var profiles = await _context.WarmupProfiles
-            .Include(p => p.MailAccount)
+            .Include(p => p.MailAccount!)
+                .ThenInclude(a => a.GmailDetails)
+            .Include(p => p.MailAccount!)
+                .ThenInclude(a => a.SmtpImapDetails)
             .Where(p => p.IsEnabled && p.StartDate <= utcDayStart && (p.MaxDurationDays == 0 || p.CurrentDay < p.MaxDurationDays))
             .ToListAsync(cancellationToken);
         return profiles;
