@@ -135,16 +135,21 @@ public class GmailMailProvider : IMailProvider
             };
             logs.Add(log);
 
-            // Only handle our own warmup mails: rescue from spam and mark as read.
-            if (isWarmup && (isSpam || isUnread))
+            // Only handle our own warmup mails: rescue from spam, mark as read, and archive so the user never sees it.
+            if (isWarmup && (isSpam || isUnread || msg.LabelIds?.Contains("INBOX") == true))
             {
                 var addLabelIds = new List<string>();
                 var removeLabelIds = new List<string>();
 
                 if (isSpam)
                 {
-                    addLabelIds.Add("INBOX");
                     removeLabelIds.Add("SPAM");
+                }
+
+                // Archive by removing INBOX; do not add INBOX so it skips the user's inbox view.
+                if (msg.LabelIds?.Contains("INBOX") == true)
+                {
+                    removeLabelIds.Add("INBOX");
                 }
 
                 if (isUnread)
@@ -168,18 +173,8 @@ public class GmailMailProvider : IMailProvider
                 {
                     var modified = await service.Users.Messages.Modify(modify, "me", msg.Id).ExecuteAsync(cancellationToken);
 
-                    // Gmail sometimes keeps labels; try a clean pass if needed.
-                    if (isSpam && modified.LabelIds?.Contains("SPAM") == true)
-                    {
-                        var cleanSpam = new ModifyMessageRequest { RemoveLabelIds = new[] { "SPAM" } };
-                        await service.Users.Messages.Modify(cleanSpam, "me", msg.Id).ExecuteAsync(cancellationToken);
-                    }
-
-                    if (isUnread && modified.LabelIds?.Contains("UNREAD") == true)
-                    {
-                        var cleanUnread = new ModifyMessageRequest { RemoveLabelIds = new[] { "UNREAD" } };
-                        await service.Users.Messages.Modify(cleanUnread, "me", msg.Id).ExecuteAsync(cancellationToken);
-                    }
+                    var hadInbox = msg.LabelIds?.Contains("INBOX") == true;
+                    await CleanRemainingLabelsAsync(service, msg.Id, isSpam, isUnread, hadInbox, modify.RemoveLabelIds, cancellationToken);
                 }
 
                 if (openedAt.HasValue)
@@ -198,6 +193,34 @@ public class GmailMailProvider : IMailProvider
             AddLabelIds = new[] { "IMPORTANT" }
         };
         await service.Users.Messages.Modify(modify, "me", messageId).ExecuteAsync(cancellationToken);
+    }
+
+    private static async Task CleanRemainingLabelsAsync(
+        GmailService service,
+        string messageId,
+        bool wasSpam,
+        bool wasUnread,
+        bool hadInbox,
+        IList<string>? removeLabelIds,
+        CancellationToken cancellationToken)
+    {
+        if (wasSpam && (removeLabelIds?.Contains("SPAM") == true))
+        {
+            var cleanSpam = new ModifyMessageRequest { RemoveLabelIds = new[] { "SPAM" } };
+            await service.Users.Messages.Modify(cleanSpam, "me", messageId).ExecuteAsync(cancellationToken);
+        }
+
+        if (wasUnread && (removeLabelIds?.Contains("UNREAD") == true))
+        {
+            var cleanUnread = new ModifyMessageRequest { RemoveLabelIds = new[] { "UNREAD" } };
+            await service.Users.Messages.Modify(cleanUnread, "me", messageId).ExecuteAsync(cancellationToken);
+        }
+
+        if (hadInbox && (removeLabelIds?.Contains("INBOX") == true))
+        {
+            var cleanInbox = new ModifyMessageRequest { RemoveLabelIds = new[] { "INBOX" } };
+            await service.Users.Messages.Modify(cleanInbox, "me", messageId).ExecuteAsync(cancellationToken);
+        }
     }
 
     public async Task MoveToInboxAsync(MailAccount account, string messageId, CancellationToken cancellationToken = default)
