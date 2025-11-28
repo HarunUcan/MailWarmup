@@ -177,6 +177,7 @@ public class WarmupJobService : IWarmupJobService
                 l.DeliveredAt,
                 l.OpenedAt,
                 l.MarkedAsImportant,
+                l.MarkedAsStarred,
                 l.IsSpam))
             .ToArray();
     }

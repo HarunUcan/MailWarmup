@@ -169,6 +169,7 @@ namespace AutoWarm.Application.Services;
                 log.DeliveredAt,
                 log.OpenedAt,
                 log.MarkedAsImportant,
+                log.MarkedAsStarred,
                 log.IsSpam));
         }
 

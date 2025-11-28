@@ -185,6 +185,10 @@ const LogsPage = () => {
               <div>{selectedLog.markedAsImportant ? 'Evet' : 'Hayır'}</div>
             </div>
             <div className="field">
+              <label>Yıldızlı</label>
+              <div>{selectedLog.markedAsStarred ? 'Evet' : 'Hayır'}</div>
+            </div>
+            <div className="field">
               <label>Spam</label>
               <div>{selectedLog.isSpam ? 'Evet' : 'Hayır'}</div>
             </div>

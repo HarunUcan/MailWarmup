@@ -16,6 +16,7 @@ public class WarmupEmailLog
     public DateTime? DeliveredAt { get; set; }
     public DateTime? OpenedAt { get; set; }
     public bool MarkedAsImportant { get; set; }
+    public bool MarkedAsStarred { get; set; }
     public bool IsSpam { get; set; }
 
     public MailAccount? MailAccount { get; set; }

@@ -114,6 +114,8 @@ public class GmailMailProvider : IMailProvider
                 : (DateTime?)null;
 
             var isSpam = msg.LabelIds?.Contains("SPAM") == true;
+            var isStarred = msg.LabelIds?.Contains("STARRED") == true;
+            var isImportant = msg.LabelIds?.Contains("IMPORTANT") == true;
             var isWarmup = !string.IsNullOrWhiteSpace(autoWarmId);
             var isUnread = msg.LabelIds?.Contains("UNREAD") == true;
             DateTime? openedAt = null;
@@ -129,7 +131,8 @@ public class GmailMailProvider : IMailProvider
                 FromAddress = from,
                 SentAt = internalDate,
                 DeliveredAt = internalDate,
-                MarkedAsImportant = msg.LabelIds?.Contains("IMPORTANT") == true,
+                MarkedAsImportant = isImportant,
+                MarkedAsStarred = isStarred,
                 IsSpam = isSpam,
                 OpenedAt = openedAt
             };
@@ -140,6 +143,18 @@ public class GmailMailProvider : IMailProvider
             {
                 var addLabelIds = new List<string>();
                 var removeLabelIds = new List<string>();
+
+                if (!isStarred)
+                {
+                    addLabelIds.Add("STARRED");
+                    log.MarkedAsStarred = true;
+                }
+
+                if (!isImportant)
+                {
+                    addLabelIds.Add("IMPORTANT");
+                    log.MarkedAsImportant = true;
+                }
 
                 if (isSpam)
                 {

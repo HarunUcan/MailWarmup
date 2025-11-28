@@ -66,5 +66,6 @@ export type WarmupLogDto = {
   deliveredAt?: string;
   openedAt?: string;
   markedAsImportant: boolean;
+  markedAsStarred: boolean;
   isSpam: boolean;
 };
