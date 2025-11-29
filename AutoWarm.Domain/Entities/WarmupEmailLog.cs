@@ -18,6 +18,8 @@ public class WarmupEmailLog
     public bool MarkedAsImportant { get; set; }
     public bool MarkedAsStarred { get; set; }
     public bool IsSpam { get; set; }
+    public bool IsWarmup { get; set; }
+    public string? WarmupId { get; set; }
 
     public MailAccount? MailAccount { get; set; }
 }

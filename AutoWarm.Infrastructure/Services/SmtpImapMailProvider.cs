@@ -6,6 +6,7 @@ using System.Threading.Tasks;
 using AutoWarm.Domain.Entities;
 using AutoWarm.Domain.Enums;
 using AutoWarm.Domain.Interfaces;
+using AutoWarm.Domain.Models;
 using MailKit.Net.Imap;
 using MailKit.Net.Smtp;
 using MailKit.Security;
@@ -50,12 +51,14 @@ public class SmtpImapMailProvider : IMailProvider
         }
 
         var warmupId = $"AutoWarm-{Guid.NewGuid():N}";
+        var plan = WarmupActionPlan.Generate();
         var message = new MimeMessage();
         message.From.Add(new MailboxAddress(account.DisplayName, account.EmailAddress));
         message.To.Add(MailboxAddress.Parse(to));
         message.Subject = subject;
         message.Body = new TextPart("plain") { Text = body };
         message.Headers.Add("X-AutoWarm-Id", warmupId);
+        message.Headers.Add("X-AutoWarm-Plan", plan.ToHeaderValue());
 
         using var client = new SmtpClient();
         await client.ConnectAsync(account.SmtpImapDetails.SmtpHost, account.SmtpImapDetails.SmtpPort, account.SmtpImapDetails.SmtpUseSsl, cancellationToken);

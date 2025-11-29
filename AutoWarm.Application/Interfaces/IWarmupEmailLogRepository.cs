@@ -12,4 +12,5 @@ public interface IWarmupEmailLogRepository
     Task<IReadOnlyCollection<WarmupEmailLog>> QueryAsync(Guid? mailAccountId, DateTime? from, DateTime? to, CancellationToken cancellationToken = default);
     Task<IReadOnlyCollection<WarmupEmailLog>> QueryForAccountsAsync(IEnumerable<Guid> mailAccountIds, DateTime? from, DateTime? to, CancellationToken cancellationToken = default);
     Task<bool> ExistsAsync(Guid mailAccountId, string messageId, CancellationToken cancellationToken = default);
+    Task<int> CountWarmupReceivedAsync(Guid mailAccountId, CancellationToken cancellationToken = default);
 }

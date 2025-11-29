@@ -4,9 +4,11 @@ using System.Linq;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
+using AutoWarm.Application.Interfaces;
 using AutoWarm.Domain.Entities;
 using AutoWarm.Domain.Enums;
 using AutoWarm.Domain.Interfaces;
+using AutoWarm.Domain.Models;
 using AutoWarm.Infrastructure.Settings;
 using Google.Apis.Auth.OAuth2;
 using Google.Apis.Auth.OAuth2.Flows;
@@ -24,11 +26,16 @@ public class GmailMailProvider : IMailProvider
 {
     private readonly GmailOAuthOptions _options;
     private readonly ILogger<GmailMailProvider> _logger;
+    private readonly IWarmupEmailLogRepository _logRepository;
 
-    public GmailMailProvider(IOptions<GmailOAuthOptions> options, ILogger<GmailMailProvider> logger)
+    public GmailMailProvider(
+        IOptions<GmailOAuthOptions> options,
+        ILogger<GmailMailProvider> logger,
+        IWarmupEmailLogRepository logRepository)
     {
         _options = options.Value;
         _logger = logger;
+        _logRepository = logRepository;
     }
 
     public async Task<bool> ValidateCredentialsAsync(MailAccount account, CancellationToken cancellationToken = default)
@@ -51,12 +58,14 @@ public class GmailMailProvider : IMailProvider
 
         // Add a unique id so we can later detect our own messages in spam.
         var warmupId = $"AutoWarm-{Guid.NewGuid():N}";
+        var plan = WarmupActionPlan.Generate();
         var message = new MimeMessage();
         message.From.Add(MailboxAddress.Parse(account.EmailAddress));
         message.To.Add(MailboxAddress.Parse(to));
         message.Subject = subject;
         message.Body = new TextPart("plain") { Text = body };
         message.Headers.Add("X-AutoWarm-Id", warmupId);
+        message.Headers.Add("X-AutoWarm-Plan", plan.ToHeaderValue());
 
         var raw = Base64UrlEncode(Encoding.UTF8.GetBytes(message.ToString()));
         var gmailMessage = new Message { Raw = raw };
@@ -69,10 +78,11 @@ public class GmailMailProvider : IMailProvider
         var service = await CreateServiceAsync(account, cancellationToken);
         var logs = new List<WarmupEmailLog>();
         var processed = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var warmupContext = await BuildWarmupActionContextAsync(account.Id, cancellationToken);
 
         // Process spam first so warmup mails are rescued quickly, then inbox.
-        await AddLogsForLabelAsync(service, account, logs, processed, "SPAM", cancellationToken);
-        await AddLogsForLabelAsync(service, account, logs, processed, "INBOX", cancellationToken);
+        await AddLogsForLabelAsync(service, account, logs, processed, "SPAM", warmupContext, cancellationToken);
+        await AddLogsForLabelAsync(service, account, logs, processed, "INBOX", warmupContext, cancellationToken);
 
         return logs;
     }
@@ -83,6 +93,7 @@ public class GmailMailProvider : IMailProvider
         List<WarmupEmailLog> logs,
         HashSet<string> processed,
         string labelId,
+        WarmupActionContext warmupContext,
         CancellationToken cancellationToken)
     {
         var listRequest = service.Users.Messages.List("me");
@@ -109,6 +120,8 @@ public class GmailMailProvider : IMailProvider
             var from = headers.FirstOrDefault(h => h.Name.Equals("From", StringComparison.OrdinalIgnoreCase))?.Value ?? string.Empty;
             var to = headers.FirstOrDefault(h => h.Name.Equals("To", StringComparison.OrdinalIgnoreCase))?.Value ?? account.EmailAddress;
             var autoWarmId = headers.FirstOrDefault(h => h.Name.Equals("X-AutoWarm-Id", StringComparison.OrdinalIgnoreCase))?.Value;
+            var planHeader = headers.FirstOrDefault(h => h.Name.Equals("X-AutoWarm-Plan", StringComparison.OrdinalIgnoreCase))?.Value;
+            var originalMessageId = headers.FirstOrDefault(h => h.Name.Equals("Message-ID", StringComparison.OrdinalIgnoreCase))?.Value;
             var internalDate = msg.InternalDate.HasValue
                 ? DateTimeOffset.FromUnixTimeMilliseconds((long)msg.InternalDate.Value).UtcDateTime
                 : (DateTime?)null;
@@ -119,6 +132,17 @@ public class GmailMailProvider : IMailProvider
             var isWarmup = !string.IsNullOrWhiteSpace(autoWarmId);
             var isUnread = msg.LabelIds?.Contains("UNREAD") == true;
             DateTime? openedAt = null;
+
+            if (await _logRepository.ExistsAsync(account.Id, msg.Id, cancellationToken))
+            {
+                continue;
+            }
+
+            WarmupActionPlan? plan = null;
+            if (WarmupActionPlan.TryParse(planHeader, out var parsedPlan))
+            {
+                plan = parsedPlan;
+            }
 
             var log = new WarmupEmailLog
             {
@@ -133,41 +157,71 @@ public class GmailMailProvider : IMailProvider
                 DeliveredAt = internalDate,
                 MarkedAsImportant = isImportant,
                 MarkedAsStarred = isStarred,
+                IsWarmup = isWarmup,
+                WarmupId = autoWarmId,
                 IsSpam = isSpam,
                 OpenedAt = openedAt
             };
             logs.Add(log);
 
-            // Only handle our own warmup mails: rescue from spam, mark as read, and archive so the user never sees it.
-            if (isWarmup && (isSpam || isUnread || msg.LabelIds?.Contains("INBOX") == true))
+            // Only handle our own warmup mails: apply planned actions once, guided by headers.
+            if (isWarmup && plan is not null)
             {
+                var withinGrace = warmupContext.WarmupCount < plan.ImportantStarGraceLimit;
+                var markRead = plan.MarkRead;
+                var markImportant = plan.MarkImportant && !withinGrace;
+                var addStar = plan.AddStar && !withinGrace;
+                var archive = plan.Archive;
+                var delete = plan.Delete;
+                var rescueFromSpam = plan.RescueFromSpam && isSpam;
+                var sendReply = plan.SendReply;
                 var addLabelIds = new List<string>();
                 var removeLabelIds = new List<string>();
 
-                if (!isStarred)
+                // Early delete overrides all other label adjustments.
+                if (delete)
+                {
+                    try
+                    {
+                        await service.Users.Messages.Trash("me", msg.Id).ExecuteAsync(cancellationToken);
+                        log.MarkedAsImportant = false;
+                        log.MarkedAsStarred = false;
+                        log.IsSpam = false;
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogWarning(ex, "Failed to delete warmup mail {Message} for {Account}", msg.Id, account.EmailAddress);
+                    }
+
+                    warmupContext.WarmupCount++;
+                    continue;
+                }
+
+                if (addStar && !isStarred)
                 {
                     addLabelIds.Add("STARRED");
                     log.MarkedAsStarred = true;
                 }
 
-                if (!isImportant)
+                if (markImportant && !isImportant)
                 {
                     addLabelIds.Add("IMPORTANT");
                     log.MarkedAsImportant = true;
                 }
 
-                if (isSpam)
+                if (rescueFromSpam && isSpam)
                 {
                     removeLabelIds.Add("SPAM");
+                    log.IsSpam = false;
                 }
 
                 // Archive by removing INBOX; do not add INBOX so it skips the user's inbox view.
-                if (msg.LabelIds?.Contains("INBOX") == true)
+                if (archive && msg.LabelIds?.Contains("INBOX") == true)
                 {
                     removeLabelIds.Add("INBOX");
                 }
 
-                if (isUnread)
+                if (markRead && isUnread)
                 {
                     removeLabelIds.Add("UNREAD");
                     openedAt = DateTime.UtcNow;
@@ -186,17 +240,86 @@ public class GmailMailProvider : IMailProvider
 
                 if ((modify.AddLabelIds?.Any() == true) || (modify.RemoveLabelIds?.Any() == true))
                 {
-                    var modified = await service.Users.Messages.Modify(modify, "me", msg.Id).ExecuteAsync(cancellationToken);
+                    await service.Users.Messages.Modify(modify, "me", msg.Id).ExecuteAsync(cancellationToken);
 
                     var hadInbox = msg.LabelIds?.Contains("INBOX") == true;
                     await CleanRemainingLabelsAsync(service, msg.Id, isSpam, isUnread, hadInbox, modify.RemoveLabelIds, cancellationToken);
+                }
+
+                if (sendReply)
+                {
+                    await TryReplyAsync(service, account, msg, subject, from, autoWarmId, originalMessageId, cancellationToken);
                 }
 
                 if (openedAt.HasValue)
                 {
                     log.OpenedAt = openedAt;
                 }
+
+                warmupContext.WarmupCount++;
             }
+        }
+    }
+
+    private async Task<WarmupActionContext> BuildWarmupActionContextAsync(Guid accountId, CancellationToken cancellationToken)
+    {
+        var count = await _logRepository.CountWarmupReceivedAsync(accountId, cancellationToken);
+        return new WarmupActionContext(count);
+    }
+
+    private async Task TryReplyAsync(
+        GmailService service,
+        MailAccount account,
+        Message originalMessage,
+        string subject,
+        string fromAddress,
+        string? warmupId,
+        string? originalMessageId,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            if (string.IsNullOrWhiteSpace(fromAddress) ||
+                fromAddress.Contains(account.EmailAddress, StringComparison.OrdinalIgnoreCase))
+            {
+                return;
+            }
+
+            var replySubject = subject.StartsWith("Re:", StringComparison.OrdinalIgnoreCase) ? subject : $"Re: {subject}";
+
+            var reply = new MimeMessage();
+            reply.From.Add(MailboxAddress.Parse(account.EmailAddress));
+            reply.To.Add(MailboxAddress.Parse(fromAddress));
+            reply.Subject = replySubject;
+            reply.Body = new TextPart("plain")
+            {
+                Text = "Thanks for your email, noted."
+            };
+            reply.Headers.Add("X-AutoWarm-Plan", WarmupActionPlan.Generate().ToHeaderValue());
+
+            if (!string.IsNullOrWhiteSpace(originalMessageId))
+            {
+                reply.InReplyTo = originalMessageId;
+                reply.Headers.Add("References", originalMessageId);
+            }
+
+            if (!string.IsNullOrWhiteSpace(warmupId))
+            {
+                reply.Headers.Add("X-AutoWarm-Id", warmupId);
+            }
+
+            var raw = Base64UrlEncode(Encoding.UTF8.GetBytes(reply.ToString()));
+            var sendRequest = new Message
+            {
+                Raw = raw,
+                ThreadId = originalMessage.ThreadId
+            };
+
+            await service.Users.Messages.Send(sendRequest, "me").ExecuteAsync(cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to auto-reply to warmup mail for {Account}", account.EmailAddress);
         }
     }
 
@@ -318,5 +441,15 @@ public class GmailMailProvider : IMailProvider
         var s = Convert.ToBase64String(input);
         s = s.Replace('+', '-').Replace('/', '_').TrimEnd('=');
         return s;
+    }
+
+    private sealed class WarmupActionContext
+    {
+        public WarmupActionContext(int warmupCount)
+        {
+            WarmupCount = warmupCount;
+        }
+
+        public int WarmupCount { get; set; }
     }
 }

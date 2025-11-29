@@ -5,6 +5,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using AutoWarm.Application.Interfaces;
 using AutoWarm.Domain.Entities;
+using AutoWarm.Domain.Enums;
 using Microsoft.EntityFrameworkCore;
 
 namespace AutoWarm.Infrastructure.Persistence.Repositories;
@@ -73,5 +74,12 @@ public class WarmupEmailLogRepository : IWarmupEmailLogRepository
     public Task<bool> ExistsAsync(Guid mailAccountId, string messageId, CancellationToken cancellationToken = default)
     {
         return _context.WarmupEmailLogs.AnyAsync(l => l.MailAccountId == mailAccountId && l.MessageId == messageId, cancellationToken);
+    }
+
+    public Task<int> CountWarmupReceivedAsync(Guid mailAccountId, CancellationToken cancellationToken = default)
+    {
+        return _context.WarmupEmailLogs
+            .Where(l => l.MailAccountId == mailAccountId && l.IsWarmup && l.Direction == EmailDirection.Received)
+            .CountAsync(cancellationToken);
     }
 }

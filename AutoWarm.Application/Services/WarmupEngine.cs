@@ -177,7 +177,8 @@ public class WarmupEngine : IWarmupEngine
                     ToAddress = toAddress,
                     FromAddress = account.EmailAddress,
                     SentAt = DateTime.UtcNow,
-                    DeliveredAt = DateTime.UtcNow
+                    DeliveredAt = DateTime.UtcNow,
+                    IsWarmup = true
                 }, cancellationToken);
             }
             catch (Exception ex)
