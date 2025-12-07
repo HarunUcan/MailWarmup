@@ -18,6 +18,7 @@ using Google.Apis.Services;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using MimeKit;
+using MimeKit.Utils;
 using FileDataStore = Google.Apis.Util.Store.FileDataStore;
 
 namespace AutoWarm.Infrastructure.Services;
@@ -27,15 +28,18 @@ public class GmailMailProvider : IMailProvider
     private readonly GmailOAuthOptions _options;
     private readonly ILogger<GmailMailProvider> _logger;
     private readonly IWarmupEmailLogRepository _logRepository;
+    private readonly IWarmupPlannedEmailRepository _plannedEmailRepository;
 
     public GmailMailProvider(
         IOptions<GmailOAuthOptions> options,
         ILogger<GmailMailProvider> logger,
-        IWarmupEmailLogRepository logRepository)
+        IWarmupEmailLogRepository logRepository,
+        IWarmupPlannedEmailRepository plannedEmailRepository)
     {
         _options = options.Value;
         _logger = logger;
         _logRepository = logRepository;
+        _plannedEmailRepository = plannedEmailRepository;
     }
 
     public async Task<bool> ValidateCredentialsAsync(MailAccount account, CancellationToken cancellationToken = default)
@@ -52,25 +56,22 @@ public class GmailMailProvider : IMailProvider
         }
     }
 
-    public async Task<string> SendEmailAsync(MailAccount account, string to, string subject, string body, CancellationToken cancellationToken = default)
+    public async Task<SendEmailResult> SendEmailAsync(MailAccount account, string to, string subject, string body, CancellationToken cancellationToken = default)
     {
         var service = await CreateServiceAsync(account, cancellationToken);
 
-        // Add a unique id so we can later detect our own messages in spam.
-        var warmupId = $"AutoWarm-{Guid.NewGuid():N}";
-        var plan = WarmupActionPlan.Generate();
         var message = new MimeMessage();
+        message.MessageId = MimeUtils.GenerateMessageId("autowarm.local");
         message.From.Add(MailboxAddress.Parse(account.EmailAddress));
         message.To.Add(MailboxAddress.Parse(to));
         message.Subject = subject;
         message.Body = new TextPart("plain") { Text = body };
-        message.Headers.Add("X-AutoWarm-Id", warmupId);
-        message.Headers.Add("X-AutoWarm-Plan", plan.ToHeaderValue());
 
         var raw = Base64UrlEncode(Encoding.UTF8.GetBytes(message.ToString()));
         var gmailMessage = new Message { Raw = raw };
         var result = await service.Users.Messages.Send(gmailMessage, "me").ExecuteAsync(cancellationToken);
-        return result.Id;
+        var internetMessageId = string.IsNullOrWhiteSpace(message.MessageId) ? MimeUtils.GenerateMessageId("autowarm.local") : message.MessageId;
+        return new SendEmailResult(result.Id, internetMessageId);
     }
 
     public async Task<IReadOnlyCollection<WarmupEmailLog>> FetchRecentEmailsAsync(MailAccount account, CancellationToken cancellationToken = default)
@@ -119,8 +120,6 @@ public class GmailMailProvider : IMailProvider
             var subject = headers.FirstOrDefault(h => h.Name.Equals("Subject", StringComparison.OrdinalIgnoreCase))?.Value ?? "(no subject)";
             var from = headers.FirstOrDefault(h => h.Name.Equals("From", StringComparison.OrdinalIgnoreCase))?.Value ?? string.Empty;
             var to = headers.FirstOrDefault(h => h.Name.Equals("To", StringComparison.OrdinalIgnoreCase))?.Value ?? account.EmailAddress;
-            var autoWarmId = headers.FirstOrDefault(h => h.Name.Equals("X-AutoWarm-Id", StringComparison.OrdinalIgnoreCase))?.Value;
-            var planHeader = headers.FirstOrDefault(h => h.Name.Equals("X-AutoWarm-Plan", StringComparison.OrdinalIgnoreCase))?.Value;
             var originalMessageId = headers.FirstOrDefault(h => h.Name.Equals("Message-ID", StringComparison.OrdinalIgnoreCase))?.Value;
             var internalDate = msg.InternalDate.HasValue
                 ? DateTimeOffset.FromUnixTimeMilliseconds((long)msg.InternalDate.Value).UtcDateTime
@@ -129,26 +128,46 @@ public class GmailMailProvider : IMailProvider
             var isSpam = msg.LabelIds?.Contains("SPAM") == true;
             var isStarred = msg.LabelIds?.Contains("STARRED") == true;
             var isImportant = msg.LabelIds?.Contains("IMPORTANT") == true;
-            var isWarmup = !string.IsNullOrWhiteSpace(autoWarmId);
             var isUnread = msg.LabelIds?.Contains("UNREAD") == true;
             DateTime? openedAt = null;
 
-            if (await _logRepository.ExistsAsync(account.Id, msg.Id, cancellationToken))
+            var messageIdForLog = string.IsNullOrWhiteSpace(originalMessageId) ? msg.Id : originalMessageId;
+            if (await _logRepository.ExistsAsync(account.Id, messageIdForLog, cancellationToken))
             {
                 continue;
             }
 
-            WarmupActionPlan? plan = null;
-            if (WarmupActionPlan.TryParse(planHeader, out var parsedPlan))
+            WarmupPlannedEmail? plannedEmail = null;
+            if (!string.IsNullOrWhiteSpace(originalMessageId))
             {
-                plan = parsedPlan;
+                plannedEmail = await _plannedEmailRepository.GetByInternetMessageIdAsync(originalMessageId, cancellationToken);
             }
+
+            if (plannedEmail is null)
+            {
+                plannedEmail = await _plannedEmailRepository.GetPendingForTargetAsync(account.Id, to, cancellationToken);
+            }
+
+            var isWarmup = plannedEmail is not null;
+            WarmupActionPlan? plan = plannedEmail is null
+                ? null
+                : new WarmupActionPlan
+                {
+                    MarkRead = plannedEmail.MarkRead,
+                    SendReply = plannedEmail.SendReply,
+                    MarkImportant = plannedEmail.MarkImportant,
+                    AddStar = plannedEmail.AddStar,
+                    Archive = plannedEmail.Archive,
+                    Delete = plannedEmail.Delete,
+                    RescueFromSpam = plannedEmail.RescueFromSpam,
+                    ImportantStarGraceLimit = plannedEmail.ImportantStarGraceLimit
+                };
 
             var log = new WarmupEmailLog
             {
                 Id = Guid.NewGuid(),
                 MailAccountId = account.Id,
-                MessageId = msg.Id,
+                MessageId = messageIdForLog,
                 Direction = EmailDirection.Received,
                 Subject = subject,
                 ToAddress = to,
@@ -158,14 +177,14 @@ public class GmailMailProvider : IMailProvider
                 MarkedAsImportant = isImportant,
                 MarkedAsStarred = isStarred,
                 IsWarmup = isWarmup,
-                WarmupId = autoWarmId,
+                WarmupId = plannedEmail?.InternetMessageId ?? originalMessageId,
                 IsSpam = isSpam,
                 OpenedAt = openedAt
             };
             logs.Add(log);
 
-            // Only handle our own warmup mails: apply planned actions once, guided by headers.
-            if (isWarmup && plan is not null)
+            // Only handle our own warmup mails: apply planned actions once, guided by stored plans.
+            if (plan is not null && plannedEmail?.AppliedAt is null)
             {
                 var withinGrace = warmupContext.WarmupCount < plan.ImportantStarGraceLimit;
                 var markRead = plan.MarkRead;
@@ -248,12 +267,17 @@ public class GmailMailProvider : IMailProvider
 
                 if (sendReply)
                 {
-                    await TryReplyAsync(service, account, msg, subject, from, autoWarmId, originalMessageId, cancellationToken);
+                    await TryReplyAsync(service, account, msg, subject, from, originalMessageId, cancellationToken);
                 }
 
                 if (openedAt.HasValue)
                 {
                     log.OpenedAt = openedAt;
+                }
+
+                if (plannedEmail is not null)
+                {
+                    await _plannedEmailRepository.MarkAppliedAsync(plannedEmail.Id, DateTime.UtcNow, cancellationToken);
                 }
 
                 warmupContext.WarmupCount++;
@@ -273,7 +297,6 @@ public class GmailMailProvider : IMailProvider
         Message originalMessage,
         string subject,
         string fromAddress,
-        string? warmupId,
         string? originalMessageId,
         CancellationToken cancellationToken)
     {
@@ -286,8 +309,10 @@ public class GmailMailProvider : IMailProvider
             }
 
             var replySubject = subject.StartsWith("Re:", StringComparison.OrdinalIgnoreCase) ? subject : $"Re: {subject}";
+            var replyPlan = WarmupActionPlan.Generate();
 
             var reply = new MimeMessage();
+            reply.MessageId = MimeUtils.GenerateMessageId("autowarm.local");
             reply.From.Add(MailboxAddress.Parse(account.EmailAddress));
             reply.To.Add(MailboxAddress.Parse(fromAddress));
             reply.Subject = replySubject;
@@ -295,17 +320,11 @@ public class GmailMailProvider : IMailProvider
             {
                 Text = "Thanks for your email, noted."
             };
-            reply.Headers.Add("X-AutoWarm-Plan", WarmupActionPlan.Generate().ToHeaderValue());
 
             if (!string.IsNullOrWhiteSpace(originalMessageId))
             {
                 reply.InReplyTo = originalMessageId;
                 reply.Headers.Add("References", originalMessageId);
-            }
-
-            if (!string.IsNullOrWhiteSpace(warmupId))
-            {
-                reply.Headers.Add("X-AutoWarm-Id", warmupId);
             }
 
             var raw = Base64UrlEncode(Encoding.UTF8.GetBytes(reply.ToString()));
@@ -316,6 +335,39 @@ public class GmailMailProvider : IMailProvider
             };
 
             await service.Users.Messages.Send(sendRequest, "me").ExecuteAsync(cancellationToken);
+
+            var internetMessageId = string.IsNullOrWhiteSpace(reply.MessageId) ? MimeUtils.GenerateMessageId("autowarm.local") : reply.MessageId;
+            await _plannedEmailRepository.AddAsync(new WarmupPlannedEmail
+            {
+                Id = Guid.NewGuid(),
+                SenderMailAccountId = account.Id,
+                TargetAddress = fromAddress,
+                InternetMessageId = internetMessageId,
+                MarkRead = replyPlan.MarkRead,
+                SendReply = replyPlan.SendReply,
+                MarkImportant = replyPlan.MarkImportant,
+                AddStar = replyPlan.AddStar,
+                Archive = replyPlan.Archive,
+                Delete = replyPlan.Delete,
+                RescueFromSpam = replyPlan.RescueFromSpam,
+                ImportantStarGraceLimit = replyPlan.ImportantStarGraceLimit,
+                CreatedAt = DateTime.UtcNow
+            }, cancellationToken);
+
+            await _logRepository.AddAsync(new WarmupEmailLog
+            {
+                Id = Guid.NewGuid(),
+                MailAccountId = account.Id,
+                MessageId = internetMessageId,
+                Direction = EmailDirection.Replied,
+                Subject = replySubject,
+                ToAddress = fromAddress,
+                FromAddress = account.EmailAddress,
+                SentAt = DateTime.UtcNow,
+                DeliveredAt = DateTime.UtcNow,
+                IsWarmup = true,
+                WarmupId = internetMessageId
+            }, cancellationToken);
         }
         catch (Exception ex)
         {

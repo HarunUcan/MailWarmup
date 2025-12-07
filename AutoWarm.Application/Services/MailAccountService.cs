@@ -137,9 +137,9 @@ namespace AutoWarm.Application.Services;
         var subject = string.IsNullOrWhiteSpace(request.Subject) ? "AutoWarm test" : request.Subject;
         var body = string.IsNullOrWhiteSpace(request.Body) ? "AutoWarm warmup test email." : request.Body;
 
-        var messageId = await provider.SendEmailAsync(account, to, subject, body, cancellationToken);
+        var message = await provider.SendEmailAsync(account, to, subject, body, cancellationToken);
         await _unitOfWork.SaveChangesAsync(cancellationToken);
-        return messageId;
+        return message.ProviderMessageId;
     }
 
     public async Task<IReadOnlyCollection<Application.DTOs.Logs.WarmupLogDto>> FetchRecentAsync(Guid userId, Guid mailAccountId, CancellationToken cancellationToken = default)

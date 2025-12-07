@@ -36,6 +36,7 @@ public static class DependencyInjection
         services.AddScoped<IWarmupProfileRepository, WarmupProfileRepository>();
         services.AddScoped<IWarmupJobRepository, WarmupJobRepository>();
         services.AddScoped<IWarmupEmailLogRepository, WarmupEmailLogRepository>();
+        services.AddScoped<IWarmupPlannedEmailRepository, WarmupPlannedEmailRepository>();
         services.AddScoped<IUnitOfWork, UnitOfWork>();
 
         services.AddScoped<ITokenService, TokenService>();

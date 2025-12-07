@@ -11,6 +11,7 @@ using MailKit.Net.Imap;
 using MailKit.Net.Smtp;
 using MailKit.Security;
 using MimeKit;
+using MimeKit.Utils;
 
 namespace AutoWarm.Infrastructure.Services;
 
@@ -43,22 +44,19 @@ public class SmtpImapMailProvider : IMailProvider
         return true;
     }
 
-    public async Task<string> SendEmailAsync(MailAccount account, string to, string subject, string body, CancellationToken cancellationToken = default)
+    public async Task<SendEmailResult> SendEmailAsync(MailAccount account, string to, string subject, string body, CancellationToken cancellationToken = default)
     {
         if (account.SmtpImapDetails is null)
         {
             throw new InvalidOperationException("SMTP/IMAP details missing.");
         }
 
-        var warmupId = $"AutoWarm-{Guid.NewGuid():N}";
-        var plan = WarmupActionPlan.Generate();
         var message = new MimeMessage();
+        message.MessageId = MimeUtils.GenerateMessageId("autowarm.local");
         message.From.Add(new MailboxAddress(account.DisplayName, account.EmailAddress));
         message.To.Add(MailboxAddress.Parse(to));
         message.Subject = subject;
         message.Body = new TextPart("plain") { Text = body };
-        message.Headers.Add("X-AutoWarm-Id", warmupId);
-        message.Headers.Add("X-AutoWarm-Plan", plan.ToHeaderValue());
 
         using var client = new SmtpClient();
         await client.ConnectAsync(account.SmtpImapDetails.SmtpHost, account.SmtpImapDetails.SmtpPort, account.SmtpImapDetails.SmtpUseSsl, cancellationToken);
@@ -66,7 +64,8 @@ public class SmtpImapMailProvider : IMailProvider
         await client.SendAsync(message, cancellationToken);
         await client.DisconnectAsync(true, cancellationToken);
 
-        return message.MessageId ?? Guid.NewGuid().ToString("N");
+        var internetMessageId = string.IsNullOrWhiteSpace(message.MessageId) ? MimeUtils.GenerateMessageId("autowarm.local") : message.MessageId;
+        return new SendEmailResult(internetMessageId, internetMessageId);
     }
 
     public async Task<IReadOnlyCollection<WarmupEmailLog>> FetchRecentEmailsAsync(MailAccount account, CancellationToken cancellationToken = default)

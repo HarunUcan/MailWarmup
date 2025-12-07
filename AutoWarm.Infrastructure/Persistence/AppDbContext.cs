@@ -19,6 +19,7 @@ public class AppDbContext : DbContext
     public DbSet<WarmupProfile> WarmupProfiles => Set<WarmupProfile>();
     public DbSet<WarmupJob> WarmupJobs => Set<WarmupJob>();
     public DbSet<WarmupEmailLog> WarmupEmailLogs => Set<WarmupEmailLog>();
+    public DbSet<WarmupPlannedEmail> WarmupPlannedEmails => Set<WarmupPlannedEmail>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -65,6 +66,10 @@ public class AppDbContext : DbContext
             .HasOne(l => l.MailAccount)
             .WithMany(a => a.WarmupEmailLogs)
             .HasForeignKey(l => l.MailAccountId);
+
+        modelBuilder.Entity<WarmupPlannedEmail>()
+            .HasIndex(p => p.InternetMessageId)
+            .IsUnique();
     }
 }
 

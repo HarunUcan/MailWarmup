@@ -7,6 +7,7 @@ using AutoWarm.Infrastructure.Settings;
 using Google.Apis.Auth.OAuth2;
 using Google.Apis.Auth.OAuth2.Flows;
 using Google.Apis.Gmail.v1;
+using Google.Apis.Auth.OAuth2.Requests;
 using Google.Apis.Util.Store;
 using Microsoft.Extensions.Options;
 
@@ -37,6 +38,12 @@ public class GmailOAuthService : IGmailOAuthService
 
         var state = $"{userId}:{Guid.NewGuid():N}";
         var request = flow.CreateAuthorizationCodeRequest(_options.RedirectUri);
+        if (request is GoogleAuthorizationCodeRequestUrl googleRequest)
+        {
+            googleRequest.AccessType = "offline";
+            googleRequest.Prompt = "consent";
+        }
+
         request.State = state;
         var url = request.Build();
 

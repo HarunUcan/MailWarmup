@@ -5,6 +5,7 @@ using System.Threading.Tasks;
 using AutoWarm.Application.Interfaces;
 using AutoWarm.Domain.Entities;
 using AutoWarm.Domain.Enums;
+using AutoWarm.Domain.Models;
 
 namespace AutoWarm.Application.Services;
 
@@ -16,6 +17,7 @@ public class WarmupEngine : IWarmupEngine
     private readonly IMailAccountRepository _accounts;
     private readonly IMailProviderFactory _providerFactory;
     private readonly IWarmupEmailLogRepository _logs;
+    private readonly IWarmupPlannedEmailRepository _plannedEmails;
     private readonly IWarmupStrategy _strategy;
     private readonly IUnitOfWork _unitOfWork;
     private readonly IWarmupInboxRescueQueue _rescueQueue;
@@ -26,6 +28,7 @@ public class WarmupEngine : IWarmupEngine
         IMailAccountRepository accounts,
         IMailProviderFactory providerFactory,
         IWarmupEmailLogRepository logs,
+        IWarmupPlannedEmailRepository plannedEmails,
         IWarmupStrategy strategy,
         IUnitOfWork unitOfWork,
         IWarmupInboxRescueQueue rescueQueue)
@@ -35,6 +38,7 @@ public class WarmupEngine : IWarmupEngine
         _accounts = accounts;
         _providerFactory = providerFactory;
         _logs = logs;
+        _plannedEmails = plannedEmails;
         _strategy = strategy;
         _unitOfWork = unitOfWork;
         _rescueQueue = rescueQueue;
@@ -89,6 +93,17 @@ public class WarmupEngine : IWarmupEngine
                 continue;
             }
 
+            if (account.Status != MailAccountStatus.Connected ||
+                account.WarmupProfile is null ||
+                !account.WarmupProfile.IsEnabled)
+            {
+                job.Status = WarmupJobStatus.Failed;
+                job.ErrorMessage = "Warmup profile inactive for this account.";
+                job.ExecutedAt = DateTime.UtcNow;
+                await _jobs.UpdateAsync(job, cancellationToken);
+                continue;
+            }
+
             var provider = _providerFactory.Resolve(account);
             try
             {
@@ -115,12 +130,18 @@ public class WarmupEngine : IWarmupEngine
                 switch (job.Type)
                 {
                     case WarmupJobType.SendEmail:
-                        messageId = await provider.SendEmailAsync(
+                    {
+                        var plan = WarmupActionPlan.Generate();
+                        var result = await provider.SendEmailAsync(
                             account,
                             toAddress,
                             subject,
                             $"Hello from AutoWarm warmup. Target: {toAddress}",
                             cancellationToken);
+
+                        messageId = result.InternetMessageId;
+                        var targetAccountId = ResolveTargetAccountId(toAddress, networkAccounts);
+                        await StorePlannedEmailAsync(plan, account.Id, targetAccountId, toAddress, result.InternetMessageId, cancellationToken);
 
                         // Schedule a reply from the peer after a short delay to simulate conversation.
                         var peerForReply = networkAccounts.FirstOrDefault(a => string.Equals(a.EmailAddress, toAddress, StringComparison.OrdinalIgnoreCase));
@@ -142,14 +163,22 @@ public class WarmupEngine : IWarmupEngine
                         {
                             _rescueQueue.Enqueue(account.Id);
                         }
+
                         break;
+                    }
                     case WarmupJobType.ReplyEmail:
-                        messageId = await provider.SendEmailAsync(
+                    {
+                        var plan = WarmupActionPlan.Generate();
+                        var result = await provider.SendEmailAsync(
                             account,
                             toAddress,
                             subject,
                             $"Replying in warmup mesh to {toAddress}.",
                             cancellationToken);
+
+                        messageId = result.InternetMessageId;
+                        var targetAccountId = ResolveTargetAccountId(toAddress, networkAccounts);
+                        await StorePlannedEmailAsync(plan, account.Id, targetAccountId, toAddress, result.InternetMessageId, cancellationToken);
 
                         var replyTarget = networkAccounts.FirstOrDefault(a => string.Equals(a.EmailAddress, toAddress, StringComparison.OrdinalIgnoreCase));
                         if (replyTarget is not null)
@@ -157,6 +186,7 @@ public class WarmupEngine : IWarmupEngine
                             _rescueQueue.Enqueue(replyTarget.Id);
                         }
                         break;
+                    }
                     case WarmupJobType.MarkImportant:
                         await provider.MarkAsImportantAsync(account, job.Id.ToString(), cancellationToken);
                         break;
@@ -174,12 +204,13 @@ public class WarmupEngine : IWarmupEngine
                     MessageId = messageId,
                     Direction = direction,
                     Subject = subject,
-                    ToAddress = toAddress,
-                    FromAddress = account.EmailAddress,
-                    SentAt = DateTime.UtcNow,
-                    DeliveredAt = DateTime.UtcNow,
-                    IsWarmup = true
-                }, cancellationToken);
+                ToAddress = toAddress,
+                FromAddress = account.EmailAddress,
+                SentAt = DateTime.UtcNow,
+                DeliveredAt = DateTime.UtcNow,
+                IsWarmup = true,
+                WarmupId = messageId
+            }, cancellationToken);
             }
             catch (Exception ex)
             {
@@ -192,6 +223,41 @@ public class WarmupEngine : IWarmupEngine
         }
 
         await _unitOfWork.SaveChangesAsync(cancellationToken);
+    }
+
+    private Task StorePlannedEmailAsync(
+        WarmupActionPlan plan,
+        Guid senderAccountId,
+        Guid? targetAccountId,
+        string targetAddress,
+        string internetMessageId,
+        CancellationToken cancellationToken)
+    {
+        var planned = new WarmupPlannedEmail
+        {
+            Id = Guid.NewGuid(),
+            SenderMailAccountId = senderAccountId,
+            TargetMailAccountId = targetAccountId,
+            TargetAddress = targetAddress,
+            InternetMessageId = internetMessageId,
+            MarkRead = plan.MarkRead,
+            SendReply = plan.SendReply,
+            MarkImportant = plan.MarkImportant,
+            AddStar = plan.AddStar,
+            Archive = plan.Archive,
+            Delete = plan.Delete,
+            RescueFromSpam = plan.RescueFromSpam,
+            ImportantStarGraceLimit = plan.ImportantStarGraceLimit,
+            CreatedAt = DateTime.UtcNow
+        };
+
+        return _plannedEmails.AddAsync(planned, cancellationToken);
+    }
+
+    private static Guid? ResolveTargetAccountId(string toAddress, IReadOnlyCollection<MailAccount> networkAccounts)
+    {
+        var target = networkAccounts.FirstOrDefault(a => a.EmailAddress.Equals(toAddress, StringComparison.OrdinalIgnoreCase));
+        return target?.Id;
     }
 
     private static MailAccount? SelectPeer(IReadOnlyCollection<MailAccount> network, Guid sourceAccountId)
