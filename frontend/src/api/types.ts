@@ -69,3 +69,16 @@ export type WarmupLogDto = {
   markedAsStarred: boolean;
   isSpam: boolean;
 };
+
+export type AiEmailOptimizeRequest = {
+  subject: string;
+  body: string;
+  mode: 'SpamSafe' | 'SpamSafeAndProfessional';
+  language?: string;
+};
+
+export type AiEmailOptimizeResponse = {
+  optimizedSubject: string;
+  optimizedBody: string;
+  explanationSummary: string;
+};

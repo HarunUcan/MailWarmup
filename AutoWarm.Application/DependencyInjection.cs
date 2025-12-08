@@ -15,6 +15,7 @@ public static class DependencyInjection
         services.AddScoped<IMailAccountService, MailAccountService>();
         services.AddScoped<IWarmupProfileService, WarmupProfileService>();
         services.AddScoped<IWarmupJobService, WarmupJobService>();
+        services.AddScoped<IEmailOptimizationService, EmailOptimizationService>();
         services.AddScoped<IWarmupStrategy, LinearWarmupStrategy>();
         services.AddScoped<IWarmupEngine, WarmupEngine>();
         services.AddSingleton<IWarmupInboxRescueQueue, WarmupInboxRescueQueue>();

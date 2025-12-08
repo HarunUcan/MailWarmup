@@ -569,6 +569,84 @@ a {
   color: #1d4ed8;
 }
 
+.alert {
+  margin: 8px 0 14px;
+  padding: 12px 14px;
+  border-radius: 14px;
+  font-weight: 700;
+}
+
+.alert.error {
+  background: rgba(239, 68, 68, 0.12);
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  color: #b91c1c;
+}
+
+.optimizer-page .card-title {
+  font-size: 18px;
+}
+
+.optimizer-layout {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.optimizer-card {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  flex: 1;
+}
+
+.optimizer-textarea {
+  min-height: 260px;
+  resize: vertical;
+}
+
+.optimizer-actions {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 10px;
+  margin-top: 6px;
+}
+
+.optimizer-placeholder {
+  min-height: 280px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  color: #6b7280;
+  background: #f5f7fb;
+  border: 1px dashed #d6deef;
+  border-radius: 14px;
+  padding: 16px;
+}
+
+.explanation-box {
+  min-height: 90px;
+  max-height: 180px;
+  overflow: auto;
+  background: #f6f9ff;
+  border: 1px solid #e1e8f5;
+  border-radius: 12px;
+  padding: 10px 12px;
+  color: #0e1628;
+  line-height: 1.55;
+}
+
+@media (min-width: 1024px) {
+  .optimizer-layout {
+    flex-direction: row;
+  }
+
+  .optimizer-textarea {
+    min-height: 300px;
+  }
+}
+
 @media (max-width: 768px) {
   .topbar {
     flex-wrap: wrap;

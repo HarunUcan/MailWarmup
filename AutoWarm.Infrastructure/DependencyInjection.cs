@@ -4,6 +4,7 @@ using AutoWarm.Application.Strategies;
 using AutoWarm.Infrastructure.Persistence;
 using AutoWarm.Infrastructure.Persistence.Repositories;
 using AutoWarm.Infrastructure.Services;
+using AutoWarm.Infrastructure.Services.Ai;
 using AutoWarm.Infrastructure.Settings;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
@@ -17,6 +18,7 @@ public static class DependencyInjection
     {
         services.Configure<JwtOptions>(configuration.GetSection(JwtOptions.SectionName));
         services.Configure<GmailOAuthOptions>(configuration.GetSection(GmailOAuthOptions.SectionName));
+        services.Configure<AiProviderOptions>(configuration.GetSection(AiProviderOptions.SectionName));
 
         var connectionString = configuration.GetConnectionString("DefaultConnection");
         services.AddDbContext<AppDbContext>(options =>
@@ -43,8 +45,12 @@ public static class DependencyInjection
         services.AddScoped<IGmailOAuthService, GmailOAuthService>();
         services.AddScoped<IMailProviderFactory, MailProviderFactory>();
         services.AddScoped<IDnsHealthChecker, DnsHealthChecker>();
+        services.AddScoped<IAiTextProviderFactory, AiTextProviderFactory>();
         services.AddScoped<GmailMailProvider>();
         services.AddScoped<SmtpImapMailProvider>();
+        services.AddScoped<OpenAiTextProvider>();
+        services.AddScoped<OllamaTextProvider>();
+        services.AddHttpClient<GeminiTextProvider>();
 
         return services;
     }
