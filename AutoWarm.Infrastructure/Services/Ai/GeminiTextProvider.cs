@@ -95,6 +95,78 @@ public class GeminiTextProvider : IAiTextProvider
         }
     }
 
+    public async Task<AiGenerateEmailResponse> GenerateWarmupEmailAsync(AiGenerateEmailRequest request, CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(_options.GeminiApiKey))
+        {
+            throw new InvalidOperationException("Gemini API anahtarı yapılandırılmamış.");
+        }
+
+        var prompt = BuildWarmupEmailPrompt(request);
+        var response = await ExecuteGeminiRequestAsync(prompt, cancellationToken);
+        
+        var parsed = TryParseGenerateResponse(response);
+        if (parsed != null) return parsed;
+
+        _logger.LogWarning("Gemini warmup mail yanıtı ayrıştırılamadı. Fallback dönülüyor.");
+        return new AiGenerateEmailResponse { Subject = "Warmup", Body = "Hello!" };
+    }
+
+    public async Task<AiGenerateEmailResponse> GenerateReplyAsync(AiGenerateReplyRequest request, CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(_options.GeminiApiKey))
+        {
+            throw new InvalidOperationException("Gemini API anahtarı yapılandırılmamış.");
+        }
+
+        var prompt = BuildReplyEmailPrompt(request);
+        var response = await ExecuteGeminiRequestAsync(prompt, cancellationToken);
+
+        var parsed = TryParseGenerateResponse(response);
+        if (parsed != null) return parsed;
+
+        _logger.LogWarning("Gemini reply yanıtı ayrıştırılamadı. Fallback dönülüyor.");
+        return new AiGenerateEmailResponse { Subject = "Re: " + request.OriginalSubject, Body = "Received, thanks." };
+    }
+
+    private async Task<string> ExecuteGeminiRequestAsync(string prompt, CancellationToken cancellationToken)
+    {
+         var requestBody = new
+        {
+            contents = new[]
+            {
+                new
+                {
+                    role = "user",
+                    parts = new[] { new { text = prompt } }
+                }
+            },
+            generationConfig = new
+            {
+                temperature = 0.7, // Higher creativity for generation
+                topP = 0.9,
+                responseMimeType = "application/json"
+            }
+        };
+
+        var endpoint = $"https://generativelanguage.googleapis.com/v1beta/models/{_options.GeminiModelName}:generateContent?key={_options.GeminiApiKey}";
+        using var httpRequest = new HttpRequestMessage(HttpMethod.Post, endpoint)
+        {
+            Content = JsonContent.Create(requestBody)
+        };
+
+        var httpResponse = await _httpClient.SendAsync(httpRequest, cancellationToken);
+        if (!httpResponse.IsSuccessStatusCode)
+        {
+            var errorContent = await httpResponse.Content.ReadAsStringAsync(cancellationToken);
+            throw new InvalidOperationException($"Gemini generation failed: {httpResponse.StatusCode}. {errorContent}");
+        }
+
+        await using var contentStream = await httpResponse.Content.ReadAsStreamAsync(cancellationToken);
+        using var document = await JsonDocument.ParseAsync(contentStream, cancellationToken: cancellationToken);
+        return ExtractText(document);
+    }
+
     private static string BuildPrompt(AiEmailOptimizeRequest request)
     {
         var language = string.IsNullOrWhiteSpace(request.Language) ? "tr" : request.Language;
@@ -126,6 +198,33 @@ public class GeminiTextProvider : IAiTextProvider
         sb.AppendLine("Orijinal gövde:");
         sb.AppendLine(request.Body ?? string.Empty);
 
+        return sb.ToString();
+    }
+
+    private static string BuildWarmupEmailPrompt(AiGenerateEmailRequest request)
+    {
+        var sb = new StringBuilder();
+        sb.AppendLine("Task: Write a natural, human-like email for warmup purposes.");
+        sb.AppendLine($"Language: {request.Language}");
+        sb.AppendLine($"Topic: {request.Topic}");
+        sb.AppendLine($"Tone: {request.Tone}");
+        sb.AppendLine("Do not use placeholders like [Name]. Use random realistic names if necessary.");
+        sb.AppendLine("Output JSON:");
+        sb.AppendLine("{ \"Subject\": \"...\", \"Body\": \"...\" }");
+        return sb.ToString();
+    }
+
+    private static string BuildReplyEmailPrompt(AiGenerateReplyRequest request)
+    {
+        var sb = new StringBuilder();
+        sb.AppendLine("Task: Write a natural reply to the following email.");
+        sb.AppendLine($"Language: {request.Language}");
+        sb.AppendLine($"Tone: {request.Tone}");
+        sb.AppendLine("Original Sender: " + request.OriginalSender);
+        sb.AppendLine("Original Subject: " + request.OriginalSubject);
+        sb.AppendLine("Original Body: " + request.OriginalBody);
+        sb.AppendLine("Output JSON:");
+        sb.AppendLine("{ \"Subject\": \"...\", \"Body\": \"...\" }");
         return sb.ToString();
     }
 
@@ -194,6 +293,21 @@ public class GeminiTextProvider : IAiTextProvider
             return parsed;
         }
         catch (JsonException)
+        {
+            return null;
+        }
+    }
+
+    private static AiGenerateEmailResponse? TryParseGenerateResponse(string text)
+    {
+        var cleaned = CleanupJson(text);
+        if (string.IsNullOrWhiteSpace(cleaned)) return null;
+        try
+        {
+            var options = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
+            return JsonSerializer.Deserialize<AiGenerateEmailResponse>(cleaned, options);
+        }
+        catch
         {
             return null;
         }

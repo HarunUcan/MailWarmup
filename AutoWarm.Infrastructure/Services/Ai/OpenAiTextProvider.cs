@@ -12,4 +12,14 @@ public class OpenAiTextProvider : IAiTextProvider
     {
         throw new NotImplementedException("OpenAI sağlayıcısı henüz uygulanmadı.");
     }
+
+    public Task<AiGenerateEmailResponse> GenerateWarmupEmailAsync(AiGenerateEmailRequest request, CancellationToken cancellationToken = default)
+    {
+        throw new NotImplementedException();
+    }
+
+    public Task<AiGenerateEmailResponse> GenerateReplyAsync(AiGenerateReplyRequest request, CancellationToken cancellationToken = default)
+    {
+        throw new NotImplementedException();
+    }
 }

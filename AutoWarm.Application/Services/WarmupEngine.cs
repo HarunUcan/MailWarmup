@@ -5,6 +5,7 @@ using System.Threading.Tasks;
 using AutoWarm.Application.Interfaces;
 using AutoWarm.Domain.Entities;
 using AutoWarm.Domain.Enums;
+using AutoWarm.Domain.Interfaces;
 using AutoWarm.Domain.Models;
 
 namespace AutoWarm.Application.Services;
@@ -21,6 +22,7 @@ public class WarmupEngine : IWarmupEngine
     private readonly IWarmupStrategy _strategy;
     private readonly IUnitOfWork _unitOfWork;
     private readonly IWarmupInboxRescueQueue _rescueQueue;
+    private readonly IAiTextProviderFactory _aiFactory;
 
     public WarmupEngine(
         IWarmupProfileRepository profiles,
@@ -31,7 +33,8 @@ public class WarmupEngine : IWarmupEngine
         IWarmupPlannedEmailRepository plannedEmails,
         IWarmupStrategy strategy,
         IUnitOfWork unitOfWork,
-        IWarmupInboxRescueQueue rescueQueue)
+        IWarmupInboxRescueQueue rescueQueue,
+        IAiTextProviderFactory aiFactory)
     {
         _profiles = profiles;
         _jobs = jobs;
@@ -42,6 +45,7 @@ public class WarmupEngine : IWarmupEngine
         _strategy = strategy;
         _unitOfWork = unitOfWork;
         _rescueQueue = rescueQueue;
+        _aiFactory = aiFactory;
     }
 
     public async Task GenerateDailyJobsAsync(CancellationToken cancellationToken = default)
@@ -105,14 +109,17 @@ public class WarmupEngine : IWarmupEngine
             }
 
             var provider = _providerFactory.Resolve(account);
+            var aiProvider = _aiFactory.Create();
             try
             {
                 string messageId = job.Id.ToString();
                 string toAddress = account.EmailAddress;
+                
                 string subject = "Warmup ping";
+                string body = "This is a fallback warmup body.";
 
                 // Resolve a target account for send or reply.
-                var targetLog = await GetLatestInboundAsync(account, cancellationToken);
+                var targetLog = await GetLatestInboundAsync(account, networkAccounts, cancellationToken);
                 if (job.Type == WarmupJobType.ReplyEmail && targetLog is not null)
                 {
                     toAddress = targetLog.FromAddress;
@@ -132,11 +139,23 @@ public class WarmupEngine : IWarmupEngine
                     case WarmupJobType.SendEmail:
                     {
                         var plan = WarmupActionPlan.Generate();
+                        
+                        // Smart Content Generation
+                        var aiRequest = new Domain.Models.AiGenerateEmailRequest 
+                        { 
+                            Language = "en", // Default to English or make configurable per profile
+                            Topic = "Business",
+                            Tone = "Professional"
+                        };
+                        var aiResponse = await aiProvider.GenerateWarmupEmailAsync(aiRequest, cancellationToken);
+                        subject = aiResponse.Subject;
+                        body = aiResponse.Body;
+
                         var result = await provider.SendEmailAsync(
                             account,
                             toAddress,
                             subject,
-                            $"Hello from AutoWarm warmup. Target: {toAddress}",
+                            body,
                             cancellationToken);
 
                         messageId = result.InternetMessageId;
@@ -145,7 +164,7 @@ public class WarmupEngine : IWarmupEngine
 
                         // Schedule a reply from the peer after a short delay to simulate conversation.
                         var peerForReply = networkAccounts.FirstOrDefault(a => string.Equals(a.EmailAddress, toAddress, StringComparison.OrdinalIgnoreCase));
-                        if (peerForReply is not null && peerForReply.Id != account.Id)
+                        if (plan.SendReply && peerForReply is not null && peerForReply.Id != account.Id)
                         {
                             var delayMinutes = _random.Next(5, 16); // 5-15 minutes
                             var replyJob = new WarmupJob
@@ -169,11 +188,26 @@ public class WarmupEngine : IWarmupEngine
                     case WarmupJobType.ReplyEmail:
                     {
                         var plan = WarmupActionPlan.Generate();
+
+                        if (targetLog != null)
+                        {
+                            var replyRequest = new Domain.Models.AiGenerateReplyRequest
+                            {
+                                OriginalSubject = targetLog.Subject,
+                                OriginalBody = "...", // Ideally we should fetch body, but log might not have it. Fallback to generic subject context.
+                                OriginalSender = targetLog.FromAddress,
+                                Language = "en"
+                            };
+                             var aiResponse = await aiProvider.GenerateReplyAsync(replyRequest, cancellationToken);
+                             subject = aiResponse.Subject;
+                             body = aiResponse.Body;
+                        }
+
                         var result = await provider.SendEmailAsync(
                             account,
                             toAddress,
                             subject,
-                            $"Replying in warmup mesh to {toAddress}.",
+                            body,
                             cancellationToken);
 
                         messageId = result.InternetMessageId;
@@ -275,13 +309,19 @@ public class WarmupEngine : IWarmupEngine
         }
     }
 
-    private async Task<WarmupEmailLog?> GetLatestInboundAsync(MailAccount account, CancellationToken cancellationToken)
+    private async Task<WarmupEmailLog?> GetLatestInboundAsync(
+        MailAccount account, 
+        IReadOnlyCollection<MailAccount> network, 
+        CancellationToken cancellationToken)
     {
         var logs = await _logs.QueryForAccountsAsync(new[] { account.Id }, null, null, cancellationToken);
+        var allowedEmails = network.Select(n => n.EmailAddress).ToHashSet(StringComparer.OrdinalIgnoreCase);
+
         return logs
             .Where(l =>
                 l.ToAddress.Equals(account.EmailAddress, StringComparison.OrdinalIgnoreCase) &&
-                !l.FromAddress.Equals(account.EmailAddress, StringComparison.OrdinalIgnoreCase))
+                !l.FromAddress.Equals(account.EmailAddress, StringComparison.OrdinalIgnoreCase) &&
+                allowedEmails.Contains(l.FromAddress))
             .OrderByDescending(l => l.SentAt ?? DateTime.MinValue)
             .FirstOrDefault();
     }

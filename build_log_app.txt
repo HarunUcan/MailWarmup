@@ -1,0 +1,13 @@
+﻿  Geri y├╝klenecek projeler belirleniyor...
+  Geri y├╝kleme i├ğin t├╝m projeler g├╝ncel.
+C:\Program Files\dotnet\sdk\10.0.100-rc.2.25502.107\Sdks\Microsoft.NET.Sdk\targets\Microsoft.NET.RuntimeIdentifierInference.targets(351,5): message NETSDK1057: Bir .NET ├Ânizleme s├╝r├╝m├╝ kullan─▒yorsunuz. Bkz. https://aka.ms/dotnet-support-policy [C:\Users\harun\Desktop\Folders\Codex Projects\MailWarmup\AutoWarm.Application\AutoWarm.Application.csproj]
+  AutoWarm.Domain -> C:\Users\harun\Desktop\Folders\Codex Projects\MailWarmup\AutoWarm.Domain\bin\Debug\net9.0\AutoWarm.Domain.dll
+C:\Users\harun\Desktop\Folders\Codex Projects\MailWarmup\AutoWarm.Application\Services\WarmupEngine.cs(36,21): error CS0100: 'unitOfWork' parametre ad─▒ bir yinelenen [C:\Users\harun\Desktop\Folders\Codex Projects\MailWarmup\AutoWarm.Application\AutoWarm.Application.csproj]
+
+Olu┼şturma BA┼ŞARISIZ OLDU.
+
+C:\Users\harun\Desktop\Folders\Codex Projects\MailWarmup\AutoWarm.Application\Services\WarmupEngine.cs(36,21): error CS0100: 'unitOfWork' parametre ad─▒ bir yinelenen [C:\Users\harun\Desktop\Folders\Codex Projects\MailWarmup\AutoWarm.Application\AutoWarm.Application.csproj]
+    0 Uyar─▒
+    1 Hata
+
+Ge├ğen S├╝re 00:00:02.47
